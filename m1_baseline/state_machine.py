@@ -1,26 +1,16 @@
 """
 Finite State Machine for Negotiation
 ======================================
-Solves failure modes #3, #4, and #6 from naive_negotiation.py:
-  #3 -- No state machine (while True loop)
-  #4 -- No turn limits
-  #6 -- No termination guarantees
+Fixes #3 (no state machine), #4 (no turn limits), #6 (no termination guarantee).
 
-THE CORE IDEA:
-  naive_negotiation.py:  while True: ...  <- no guarantee it ever stops
+  naive_negotiation.py:  while True: ...           <- no guarantee it ever stops
   this file:             while not fsm.is_terminal(): ...  <- MUST stop
 
-WHY IT MUST STOP:
-  1. Terminal states (AGREED, FAILED) have empty transition sets -- no way out.
-  2. Every non-terminal turn increments turn_count, which is capped at max_turns.
-  So the loop either reaches a terminal state or hits the cap. Both stop it.
+Terminal states have empty transition sets + turn_count is capped at max_turns.
+Every path ends.
 
-HOW TO RUN:
-  python m1_baseline/state_machine.py
-
-CONNECTION TO THE REST OF THE WORKSHOP:
-  naive_negotiation.py  ->  state_machine.py  ->  m3_adk_multiagents/
-  (while True)             (FSM guarantee)        (ADK LoopAgent / workflow agents = FSM at agent scale)
+Run:   python m1_baseline/state_machine.py
+Next:  adk web m3_adk_multiagents/negotiation_agents/  (ADK LoopAgent = FSM at agent scale)
 """
 
 import time
@@ -29,30 +19,18 @@ from enum import Enum, auto
 from typing import Optional
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STATES
-# ─────────────────────────────────────────────────────────────────────────────
-
 class NegotiationState(Enum):
-    IDLE        = auto()    # Not started yet
-    NEGOTIATING = auto()    # Offers being exchanged
-    AGREED      = auto()    # Terminal: deal reached ✓
-    FAILED      = auto()    # Terminal: no deal ✗
-    # ── Exercise 1: Uncomment the line below ──────────────────────────────
-    # TIMEOUT     = auto()    # Terminal: wall-clock deadline exceeded
+    IDLE        = auto()
+    NEGOTIATING = auto()
+    AGREED      = auto()    # Terminal ✓
+    FAILED      = auto()    # Terminal ✗
 
 
 class FailureReason(Enum):
-    MAX_TURNS_EXCEEDED  = auto()    # Ran out of rounds
-    REJECTED_BY_BUYER   = auto()    # Buyer walked away
-    REJECTED_BY_SELLER  = auto()    # Seller walked away
-    # ── Exercise 1: Uncomment the line below ──────────────────────────────
-    # WALL_CLOCK_TIMEOUT  = auto()    # Total negotiation time exceeded
+    MAX_TURNS_EXCEEDED  = auto()
+    REJECTED_BY_BUYER   = auto()
+    REJECTED_BY_SELLER  = auto()
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CONTEXT  (data that travels with the FSM)
-# ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class FSMContext:
@@ -60,40 +38,22 @@ class FSMContext:
     max_turns:         int                      = 5
     agreed_price:      Optional[float]          = None
     failure_reason:    Optional[FailureReason]   = None
-    # ── Exercise 1: Uncomment the two lines below ─────────────────────────
-    # deadline_seconds:  float                    = 60.0
-    # start_time:        float                    = 0.0
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# THE FSM
-# ─────────────────────────────────────────────────────────────────────────────
 
 class NegotiationFSM:
 
-    # The transition table.
-    # Read as: "from state X, you may move to any state in set Y"
-    #
-    # AGREED and FAILED have empty sets -- once you're in them, you can't leave.
-    # That emptiness is the termination guarantee.
+    # Empty set = terminal = no way out. That's the termination guarantee.
     TRANSITIONS: dict[NegotiationState, set[NegotiationState]] = {
         NegotiationState.IDLE:        {NegotiationState.NEGOTIATING, NegotiationState.FAILED},
         NegotiationState.NEGOTIATING: {NegotiationState.NEGOTIATING, NegotiationState.AGREED,
                                        NegotiationState.FAILED},
-        # ── Exercise 1: Add NegotiationState.TIMEOUT to the NEGOTIATING set above ──
-        NegotiationState.AGREED:      set(),   # <-- TERMINAL
-        NegotiationState.FAILED:      set(),   # <-- TERMINAL
-        # ── Exercise 1: Uncomment the line below ───────────────────────────────────
-        # NegotiationState.TIMEOUT:     set(),   # <-- TERMINAL
+        NegotiationState.AGREED:      set(),   # TERMINAL
+        NegotiationState.FAILED:      set(),   # TERMINAL
     }
 
     def __init__(self, max_turns: int = 5):
-        # ── Exercise 1: Change signature to include deadline_seconds: float = 60.0 ──
+        # Exercise 1: Add deadline_seconds: float = 60.0 param
         self.state   = NegotiationState.IDLE
         self.context = FSMContext(max_turns=max_turns)
-        # ── Exercise 1: Pass deadline_seconds=deadline_seconds to FSMContext above ──
-
-    # ── State checks ──────────────────────────────────────────────────────────
 
     @property
     def is_active(self) -> bool:
@@ -101,34 +61,18 @@ class NegotiationFSM:
 
     def is_terminal(self) -> bool:
         return self.state in {NegotiationState.AGREED, NegotiationState.FAILED}
-        # ── Exercise 1: Add NegotiationState.TIMEOUT to the set above ─────
-
-    # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def start(self) -> bool:
-        """IDLE -> NEGOTIATING. Returns False if already started."""
+        """IDLE -> NEGOTIATING."""
         if self.state != NegotiationState.IDLE:
             return False
         self.state = NegotiationState.NEGOTIATING
-        # ── Exercise 1: Uncomment the line below ──────────────────────────
-        # self.context.start_time = time.time()
         return True
 
     def process_turn(self) -> bool:
-        """
-        Record one turn. Returns False and transitions to FAILED when max_turns hit.
-        This is what makes the loop bounded -- turn_count can't grow forever.
-        """
+        """Record one turn. Returns False when max_turns hit -> FAILED."""
         if not self.is_active:
             return False
-
-        # ── Exercise 1: Uncomment the block below ─────────────────────────
-        # # Wall-clock timeout check
-        # elapsed = time.time() - self.context.start_time
-        # if elapsed > self.context.deadline_seconds:
-        #     self.state = NegotiationState.TIMEOUT
-        #     self.context.failure_reason = FailureReason.WALL_CLOCK_TIMEOUT
-        #     return False
 
         self.context.turn_count += 1
         if self.context.turn_count >= self.context.max_turns:
@@ -156,20 +100,13 @@ class NegotiationFSM:
         )
         return True
 
-    # ── Invariant check ───────────────────────────────────────────────────────
-
     def check_invariants(self) -> bool:
-        """Verify FSM is in a consistent state. Raises AssertionError if not."""
+        """Raises AssertionError if FSM is in an inconsistent state."""
         assert self.context.turn_count <= self.context.max_turns
         if self.state == NegotiationState.AGREED:
             assert self.context.agreed_price is not None
         if self.state == NegotiationState.FAILED:
             assert self.context.failure_reason is not None
-        # ── Exercise 1: Uncomment the block below ─────────────────────────
-        # if self.state == NegotiationState.TIMEOUT:
-        #     assert self.context.failure_reason is not None, (
-        #         "TIMEOUT state requires failure_reason to be set"
-        #     )
         if self.is_terminal():
             assert len(self.TRANSITIONS[self.state]) == 0
         return True
@@ -181,17 +118,12 @@ class NegotiationFSM:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# DEMO
-# ─────────────────────────────────────────────────────────────────────────────
-
 def demo_fsm() -> None:
     print("=" * 65)
-    print("NegotiationFSM -- Termination Guarantee Demo")
-    print("Property: 742 Evergreen Terrace, Austin, TX 78701")
+    print("NegotiationFSM — Termination Guarantee Demo")
     print("=" * 65)
 
-    # ── Scenario 1: Deal reached ───────────────────────────────────────────────
+    # Scenario 1: Deal reached
     print("\n--- Scenario 1: Deal Reached ---")
     fsm = NegotiationFSM(max_turns=5)
     print(f"Initial:        {fsm}")
@@ -209,7 +141,7 @@ def demo_fsm() -> None:
     fsm.check_invariants()
     print("Invariants: PASS")
 
-    # ── Scenario 2: Buyer walks away ───────────────────────────────────────────
+    # Scenario 2: Buyer walks away
     print("\n--- Scenario 2: Buyer Walks Away ---")
     fsm2 = NegotiationFSM(max_turns=5)
     fsm2.start()
@@ -220,14 +152,14 @@ def demo_fsm() -> None:
     print(f"is_terminal():  {fsm2.is_terminal()}")
     print(f"failure_reason: {fsm2.context.failure_reason.name}")
 
-    # Terminal states are sticky -- trying to accept after rejection returns False
+    # Terminal states are sticky — accept after reject returns False
     result = fsm2.accept(price=440_000)
-    print(f"accept() after reject: returned {result}  <-- state is locked")
+    print(f"accept() after reject: returned {result}  <- state is locked")
     fsm2.check_invariants()
     print("Invariants: PASS")
 
-    # ── Scenario 3: Max turns exceeded ────────────────────────────────────────
-    print("\n--- Scenario 3: Max Turns Exceeded (No Agreement Possible) ---")
+    # Scenario 3: Max turns exceeded
+    print("\n--- Scenario 3: Max Turns Exceeded ---")
     fsm3 = NegotiationFSM(max_turns=5)
     fsm3.start()
 
@@ -243,43 +175,16 @@ def demo_fsm() -> None:
     fsm3.check_invariants()
     print("Invariants: PASS")
 
-    # ── Exercise 1: Uncomment Scenario 4 after adding TIMEOUT state ────────
-    # print("\n--- Scenario 4: Wall-Clock Timeout ---")
-    # fsm4 = NegotiationFSM(max_turns=10, deadline_seconds=0.001)
-    # fsm4.start()
-    # time.sleep(0.01)  # Wait just past the deadline
-    # result = fsm4.process_turn()
-    # print(f"process_turn() returned: {result}")
-    # print(f"Final:          {fsm4}")
-    # print(f"state:          {fsm4.state.name}")
-    # print(f"failure_reason: {fsm4.context.failure_reason.name}")
-    # print(f"is_terminal():  {fsm4.is_terminal()}")
-    # fsm4.check_invariants()
-    # print("Invariants: PASS")
-    # # Verify TIMEOUT is sticky
-    # result = fsm4.accept(price=440_000)
-    # print(f"accept() after TIMEOUT: returned {result}  <-- state is locked")
-
-    # ── Key takeaway ───────────────────────────────────────────────────────────
     print("\n" + "=" * 65)
     print("KEY TAKEAWAY")
     print("=" * 65)
     print("""
-TRANSITIONS[AGREED]  = set()   <- empty = no way out
-TRANSITIONS[FAILED]  = set()   <- empty = no way out
+TRANSITIONS[AGREED] = set()  <- empty = no way out
+TRANSITIONS[FAILED] = set()  <- empty = no way out
 
-Once in a terminal state, the FSM cannot move. Combined with the
-turn cap, the loop MUST end.
+Terminal state + turn cap = loop MUST end.
 
---- Exercise 1 adds TIMEOUT: ---
-TRANSITIONS[TIMEOUT] = set()   <- empty = no way out
-Adding TIMEOUT does NOT break the termination guarantee because:
-1. TIMEOUT has an empty transition set -- once entered, cannot be exited.
-2. The deadline check provides an ADDITIONAL path to a terminal state,
-   which can only make termination happen sooner, never later.
-
-NEXT:
-  adk web m3_adk_multiagents/negotiation_agents/
+Next:  adk web m3_adk_multiagents/negotiation_agents/
     """)
 
 
