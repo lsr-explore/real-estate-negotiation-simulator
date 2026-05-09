@@ -92,7 +92,7 @@ if not OPENAI_API_KEY or OPENAI_API_KEY.startswith("sk-your"):
     sys.exit(1)
 
 
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = "gpt-4o-mini"
 
 # ─── Sample queries ───────────────────────────────────────────────────────────
 # Each query exercises a different set of GitHub MCP tools.

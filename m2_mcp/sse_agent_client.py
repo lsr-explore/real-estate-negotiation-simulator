@@ -76,7 +76,7 @@ if not OPENAI_API_KEY or OPENAI_API_KEY.startswith("sk-your"):
     print("ERROR: OPENAI_API_KEY not set (or is a placeholder).")
     sys.exit(1)
 
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = "gpt-4o-mini"
 
 SAMPLE_QUERIES_PRICING = [
     "What is the market price for 742 Evergreen Terrace, Austin, TX 78701? It's a single-family home.",
