@@ -83,7 +83,7 @@ async def main() -> None:
 
             for hop in range(4):
                 resp = await client.chat.completions.create(
-                    model="gpt-4o", messages=messages, tools=openai_tools
+                    model="gpt-4o-mini", messages=messages, tools=openai_tools
                 )
                 choice = resp.choices[0].message
                 if choice.tool_calls:
