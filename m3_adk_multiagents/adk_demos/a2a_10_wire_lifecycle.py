@@ -184,6 +184,8 @@ async def main() -> None:
         print("=== 3. BROKEN ENVELOPE (expect graceful handling) ===")
         broken_text = json.dumps({"from_agent": "buyer", "message": "broken"})
         body = make_jsonrpc_envelope(broken_text)
+        print("REQUEST:")
+        print(json.dumps(body, indent=2))
 
         resp = await http.post(base, json=body)
         result = resp.json()

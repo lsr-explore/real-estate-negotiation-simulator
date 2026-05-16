@@ -138,21 +138,12 @@ async def main() -> None:
             if "data" in part:
                 print(f"        data keys={list(part['data'].keys())}")
 
-    # ── Inspect artifacts ─────────────────────────────────────────────
-    print("\n=== response artifacts ===")
-    artifacts = result.get("artifacts") or []
-    if not artifacts:
-        print("  (no artifacts attached — this is normal for simple responses)")
-        print("  Artifacts are for durable outputs: reports, summaries, files.")
-    for artifact in artifacts:
-        print(json.dumps(artifact, indent=2))
-
     # ── Key takeaways ─────────────────────────────────────────────────
     print("\n=== key takeaways ===")
     print("• Messages carry Parts: TextPart (text), DataPart (structured), FilePart (binary)")
-    print("• Parts are conversational — they flow in the message history")
-    print("• Artifacts are durable outputs — attached to the Task, not the Message")
     print("• Use DataPart when you need both human + machine representations")
+    print("• MCP tool calls appear as DataParts in history — structured observability")
+    print("• You can programmatically inspect what tools were called without parsing text")
 
     print(f"\n=== full response (truncated) ===")
     print(json.dumps(dumped, indent=2)[:2000])

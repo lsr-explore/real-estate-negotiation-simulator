@@ -16,6 +16,23 @@
 ### What it teaches
 The simplest possible ADK agent: one `LlmAgent` with one function tool.
 
+### How to run
+
+```bash
+adk web m3_adk_multiagents/adk_demos/
+```
+
+Open http://localhost:8000, select `d01_basic_agent` from the dropdown.
+
+### Questions to try in order
+
+| # | Question | Expected behavior | What it teaches |
+|---|----------|-------------------|------------------|
+| 1 | "What's 742 Evergreen Terrace worth?" | Calls `get_quick_estimate` → $462K, high confidence | Basic tool call flow |
+| 2 | "How about 123 Main St?" | Calls tool → $380K, medium confidence | Different data, same tool |
+| 3 | "What about 999 Unknown Ave?" | Calls tool → $450K, **low** confidence (fallback) | Tool handles unknown inputs gracefully |
+| 4 | "What's the best neighborhood in Austin?" | Does NOT call tool — answers from LLM knowledge | LLM decides when tools are relevant |
+
 ### Key code elements
 
 ```python
@@ -151,15 +168,6 @@ Session 3 (no tool call):
 4. **`root_agent` is the convention.** Name it anything else and `adk web` won't find it.
 5. **Compare to M2:** In `github_agent_client.py`, you hand-wrote the tool loop (call LLM → check for tool_calls → execute → feed back). Here, ADK does all of that. You just declare `tools=[fn]`.
 
-### Questions to try in order
-
-| # | Question | Expected behavior | What it teaches |
-|---|----------|-------------------|-----------------|
-| 1 | "What's 742 Evergreen Terrace worth?" | Calls `get_quick_estimate` → $462K, high confidence | Basic tool call flow |
-| 2 | "How about 123 Main St?" | Calls tool → $380K, medium confidence | Different data, same tool |
-| 3 | "What about 999 Unknown Ave?" | Calls tool → $450K, **low** confidence (fallback) | Tool handles unknown inputs gracefully |
-| 4 | "What's the best neighborhood in Austin?" | Does NOT call tool — answers from LLM knowledge | LLM decides when tools are relevant |
-
 ### Where is the session/runner code?
 
 **Runner vs Session — the key distinction:**
@@ -212,6 +220,25 @@ async for event in runner.run_async(
 
 ### What it teaches
 How ADK connects to external MCP servers and auto-discovers tools. The LLM sees MCP tools exactly like local Python functions — the source is invisible to the model.
+
+### How to run
+
+```bash
+adk web m3_adk_multiagents/adk_demos/
+```
+
+Open http://localhost:8000, select `d02_mcp_tools` from the dropdown.
+
+### Questions to try in order
+
+| # | Question | Expected behavior | What it teaches |
+|---|----------|-------------------|------------------|
+| 1 | "What's 742 Evergreen Terrace worth?" | Calls `get_market_price` → rich data (comps, value, $/sqft) | MCP tool discovery + execution works |
+| 2 | "Calculate a discount for a $485K property in a balanced market" | Calls `calculate_discount` → discount ranges, negotiation tips | LLM picks the right tool from multiple options |
+| 3 | "What's the crime rate near 742 Evergreen Terrace?" | Does NOT call any tool — says it doesn't have crime data | **Key moment**: no crime/safety tool exists on the server. LLM checks its available tools, finds none relevant, and honestly declines. Proves auto-discovery is real |
+| 4 | "Is this property overpriced?" | May call `get_market_price` then reason about listing vs estimated value | LLM chains reasoning on top of tool results |
+
+> **Question 3 is the most important.** It proves the LLM only knows about tools MCPToolset actually discovered. The server has just 2 tools (`get_market_price`, `calculate_discount`) — no crime/safety tool, so the LLM can't answer.
 
 ### Key code elements
 
@@ -269,11 +296,11 @@ adk web starts
   → imports agent.py, sees MCPToolset in tools list
   → spawns pricing_server.py as subprocess (stdio pipe)
   → MCP handshake: initialize → tools/list
-  → discovers: get_market_price, calculate_discount, get_property_tax_estimate
-  → LlmAgent now has 3 callable tools
+  → discovers: get_market_price, calculate_discount
+  → LlmAgent now has 2 callable tools
 
 User: "What's 742 Evergreen Terrace worth?"
-  → GPT-4o sees 3 tool schemas, decides to call get_market_price
+  → GPT-4o sees 2 tool schemas, decides to call get_market_price
   → ADK sends tools/call to pricing_server.py via stdio
   → Server runs Python function, returns JSON result
   → ADK feeds result back to GPT-4o
@@ -299,23 +326,12 @@ adk web shuts down
 4. **The high event count is normal.** MCP runs an entire subprocess protocol under the hood. Students should focus on the right panel, not the event counter.
 5. **This is what the buyer/seller agents do.** `negotiation_agents/buyer_agent/agent.py` uses the same `MCPToolset` pattern — this demo is the simplified version.
 
-### Questions to try in order
-
-| # | Question | Expected behavior | What it teaches |
-|---|----------|-------------------|-----------------|
-| 1 | "What's 742 Evergreen Terrace worth?" | Calls `get_market_price` → rich data (comps, value, $/sqft) | MCP tool discovery + execution works |
-| 2 | "Calculate a discount for a $485K property in a balanced market" | Calls `calculate_discount` → discount ranges, negotiation tips | LLM picks the right tool from multiple options |
-| 3 | "What are the taxes on 742 Evergreen Terrace?" | Does NOT call any tool — says "I don't have tax info" | **Key moment**: `get_property_tax_estimate` is commented out in the server. LLM correctly knows it has no tax tool. Proves auto-discovery is real |
-| 4 | "Is this property overpriced?" | May call `get_market_price` then reason about listing vs estimated value | LLM chains reasoning on top of tool results |
-
-> **Demo 3 is the most important question.** It proves the instruction doesn't need to name tools — the LLM only knows about tools MCPToolset actually discovered. After M2 Exercise 01 (uncomment the tax tool), this same question will work.
-
 ### session.db after running
 
 | Table | Contents |
 |-------|----------|
 | **sessions** | 2 rows — one per "New Session" click. Each has `app_name=d02_mcp_tools`, state only has `__session_metadata__` with `displayName` |
-| **events** | 10 events across 2 sessions. Three queries exercised all available tools + one that revealed a missing tool |
+| **events** | 10 events across 2 sessions. Three queries exercised all available tools + one that revealed a missing tool capability |
 | **app_states** | Empty — no `app:` scoped state |
 | **user_states** | Empty — no `user:` scoped state |
 
@@ -334,17 +350,17 @@ Session 1 (3 queries in same session):
   Event 7  | mcp_tools_agent | tool_result: calculate_discount -> {inputs, discount_analysis...}
   Event 8  | mcp_tools_agent | final answer: "For a property listed at $485,000 in a balanced market..."
 
-Session 2 (1 query — demonstrates missing tool):
+Session 2 (1 query — demonstrates missing tool capability):
 
-  Event 9  | user:           "What are the taxes on 742 Evergreen Terrace?"
-  Event 10 | mcp_tools_agent | final answer (NO tool call): "I currently don't have access to specific tax information..."
+  Event 9  | user:           "What's the crime rate near 742 Evergreen Terrace?"
+  Event 10 | mcp_tools_agent | final answer (NO tool call): "I don't have access to crime data..."
 ```
 
 **Key observations:**
 
 1. **Query 1 & 2**: The LLM correctly chose `get_market_price` for valuation and `calculate_discount` for pricing — without the instruction naming these tools. Auto-discovery works.
 
-2. **Query 3 (the revealing one)**: Asked about taxes. The LLM did NOT call any tool — it responded directly saying it doesn't have tax data. This is because `get_property_tax_estimate` is **commented out** in `pricing_server.py` (it's the M2 Exercise 01 tool). The LLM checked its available tools, found no tax tool, and honestly declined. **This proves auto-discovery is real** — the LLM only knows about tools MCPToolset actually discovered.
+2. **Query 3 (the revealing one)**: Asked about crime rates. The LLM did NOT call any tool — it responded directly saying it doesn't have crime data. The server only exposes `get_market_price` and `calculate_discount` — no crime/safety tool exists. The LLM checked its available tools, found none relevant, and honestly declined. **This proves auto-discovery is real** — the LLM only knows about tools MCPToolset actually discovered.
 
 3. **No tool names in instruction**: After removing hardcoded tool names from the instruction, the LLM still found and used the right tools. The function-calling schemas (visible in the Info tab) are what the LLM reads, not the instruction text.
 
@@ -360,6 +376,26 @@ Session 2 (1 query — demonstrates missing tool):
 
 ### What it teaches
 How tools read and write session state via `ToolContext`, and how state scoping (`user:` prefix) controls what persists across sessions.
+
+### How to run
+
+```bash
+adk web m3_adk_multiagents/adk_demos/
+```
+
+Open http://localhost:8000, select `d03_sessions_state` from the dropdown.
+
+### Questions to try in order
+
+| # | Question | Expected behavior | What it teaches |
+|---|----------|-------------------|-----------------|
+| 1 | "Offer $430,000" | Calls `record_offer` + `get_offer_history`. State tab shows `offer_history: [430000]` | ToolContext state writes |
+| 2 | "$445,000" | State grows: `offer_history: [430000, 445000]` | State accumulates across turns |
+| 3 | "Offer $440,000" | LLM notices $440K < previous $445K — warns about regression | LLM reasons about state data |
+| 4 | "What's my offer history?" | Calls `get_offer_history`, returns all 3 offers | State read without write |
+| 5 | Click **New Session** → "How many offers?" | `offers: []` (session cleared) but `total_across_sessions: 3` (user: persisted) | Session vs user scope |
+
+> **Question 5 is the key moment.** It proves `user:` prefixed state survives "New Session" while unprefixed state is cleared.
 
 ### Key code elements
 
@@ -487,6 +523,23 @@ Session 2 (1 query — proves user-scoped persistence):
 ### What it teaches
 How to chain multiple agents in a pipeline where each agent's output feeds the next agent's input via session state.
 
+### How to run
+
+```bash
+adk web m3_adk_multiagents/adk_demos/
+```
+
+Open http://localhost:8000, select `d04_sequential` from the dropdown.
+
+### Questions to try in order
+
+| # | Question | Expected behavior | What it teaches |
+|---|----------|-------------------|------------------|
+| 1 | "Research this property" (or any message) | Three agents fire in sequence: market_brief → offer_drafter → polisher | Pipeline execution order |
+| 2 | After run, check **State tab** | See `market_summary`, `offer_text`, `final_email` keys | `output_key` state passing |
+
+> Watch the Events panel — you'll see 3 different `author` names firing in order.
+
 ### Key code elements
 
 ```python
@@ -563,15 +616,6 @@ User: "Research this property"
 
 5. **Each agent saw only what it needed**: `offer_drafter` read `{market_summary}` — it didn't see the raw user message or the polisher's output. State keys create **scoped visibility** between agents.
 
-### Questions to try in order
-
-| # | Question | Expected behavior | What it teaches |
-|---|----------|-------------------|-----------------|
-| 1 | "Research this property" (or any message) | Three agents fire in sequence: market_brief → offer_drafter → polisher | Pipeline execution order |
-| 2 | After run, check **State tab** | See `market_summary`, `offer_text`, `final_email` keys | `output_key` state passing |
-
-> Watch the Events panel — you'll see 3 different `author` names firing in order.
-
 ### Key teaching points for class
 
 1. **"SequentialAgent is NOT an LlmAgent."** It doesn't call a model. It's a workflow primitive that runs children in order. Think of it as a for-loop over agents.
@@ -588,6 +632,23 @@ User: "Research this property"
 
 ### What it teaches
 How to run multiple agents concurrently with `ParallelAgent` — each writing to a different state key. Useful for fan-out research (gathering independent signals simultaneously).
+
+### How to run
+
+```bash
+adk web m3_adk_multiagents/adk_demos/
+```
+
+Open http://localhost:8000, select `d05_parallel` from the dropdown.
+
+### Questions to try in order
+
+| # | Question | Expected behavior | What it teaches |
+|---|----------|-------------------|------------------|
+| 1 | "Gather signals" (or any message) | Three agents fire concurrently: schools, comps, inventory | Parallel fan-out |
+| 2 | After run, check **State tab** | See `schools`, `comps`, `inventory` keys all populated | Independent state keys |
+
+> Compare timestamps in Events — all 3 agents should start at roughly the same time (unlike d04 which is sequential).
 
 ### Key code elements
 
@@ -651,15 +712,6 @@ d04 is for **pipelines** (data flows from A→B→C). d05 is for **fan-out** (A,
 
 4. **State key in session different from event order**: The session state shows `inventory` before `schools` — the order in the state dict doesn't match declaration order because they ran concurrently and finished in unpredictable order.
 
-### Questions to try in order
-
-| # | Question | Expected behavior | What it teaches |
-|---|----------|-------------------|-----------------|
-| 1 | "Gather signals" (or any message) | Three agents fire concurrently: schools, comps, inventory | Parallel fan-out |
-| 2 | After run, check **State tab** | See `schools`, `comps`, `inventory` keys all populated | Independent state keys |
-
-> Compare timestamps in Events — all 3 agents should start at roughly the same time (unlike d04 which is sequential).
-
 ### Key teaching points for class
 
 1. **"ParallelAgent = fan-out."** Independent tasks that don't depend on each other. Use it when you'd otherwise call 3 APIs sequentially but they could run at the same time.
@@ -675,6 +727,24 @@ d04 is for **pipelines** (data flows from A→B→C). d05 is for **fan-out** (A,
 
 ### What it teaches
 How `LoopAgent` iterates sub-agents until a stop condition — either `max_iterations` or an explicit escalation from a callback. This is the ADK equivalent of M1's FSM termination guarantee.
+
+### How to run
+
+```bash
+adk web m3_adk_multiagents/adk_demos/
+```
+
+Open http://localhost:8000, select `d06_loop` from the dropdown.
+
+### Questions to try in order
+
+| # | Question | Expected behavior | What it teaches |
+|---|----------|-------------------|------------------|
+| 1 | "start" | Haggler proposes prices. Loop breaks when price hits $450K–$470K range or max 5 iterations | LoopAgent + escalation |
+| 2 | After run, check **State tab** | See `proposal` key with the last price | output_key overwrites each iteration |
+| 3 | Run again (New Session) | Different prices each time (LLM varies) but always stops ≤5 iterations | Bounded termination |
+
+> Watch the Events panel for iteration count. If 1 iteration, escalation fired immediately. If 5, the range was never hit.
 
 ### Key code elements
 
@@ -782,16 +852,6 @@ Session 2 (5 iterations):
 
 5. **Connection to M1 FSM**: `max_iterations` = `max_turns`. `escalate = True` = terminal state. Same principle, different level of abstraction.
 
-### Questions to try in order
-
-| # | Question | Expected behavior | What it teaches |
-|---|----------|-------------------|-----------------|
-| 1 | "start" | Haggler proposes prices. Loop breaks when price hits $450K–$470K range or max 5 iterations | LoopAgent + escalation |
-| 2 | After run, check **State tab** | See `proposal` key with the last price | output_key overwrites each iteration |
-| 3 | Run again (New Session) | Different prices each time (LLM varies) but always stops ≤5 iterations | Bounded termination |
-
-> Watch the Events panel for iteration count. If 1 iteration, escalation fired immediately. If 5, the range was never hit.
-
 ### Key teaching points for class
 
 1. **"LoopAgent = bounded iteration."** `max_iterations` guarantees termination. Same principle as the FSM in M1 — the loop MUST stop.
@@ -808,6 +868,23 @@ Session 2 (5 iterations):
 
 ### What it teaches
 How to wrap an entire `LlmAgent` as a callable tool using `AgentTool`. The coordinator agent calls the valuator like a function — but under the hood it's a full LLM call.
+
+### How to run
+
+```bash
+adk web m3_adk_multiagents/adk_demos/
+```
+
+Open http://localhost:8000, select `d07_agent_as_tool` from the dropdown.
+
+### Questions to try in order
+
+| # | Question | Expected behavior | What it teaches |
+|---|----------|-------------------|------------------|
+| 1 | "What should I offer on 742 Evergreen Terrace, Austin TX 78701?" | Coordinator calls `valuator` tool, gets valuation, writes offer recommendation | AgentTool delegation |
+| 2 | "What's the weather in Austin?" | Coordinator answers directly (no valuation needed) | Coordinator decides WHEN to delegate |
+
+> In Events, look for the `valuator` tool call — it looks like a function call but it's actually running a full LlmAgent under the hood.
 
 ### Key code elements
 
@@ -881,15 +958,6 @@ Query 2 — no valuation needed (AgentTool does NOT fire):
 
 5. **Valuator gave a much higher estimate ($750K–$900K)**: Without MCP tools, the valuator used LLM knowledge (which thinks Austin 78701 is expensive downtown). Compare to d02's MCP-backed `get_market_price` which returned $462K from simulated data. **This is why MCP matters** — without grounded data, the LLM hallucinated a price.
 
-### Questions to try in order
-
-| # | Question | Expected behavior | What it teaches |
-|---|----------|-------------------|-----------------|
-| 1 | "What should I offer on 742 Evergreen Terrace, Austin TX 78701?" | Coordinator calls `valuator` tool, gets valuation, writes offer recommendation | AgentTool delegation |
-| 2 | "What's the weather in Austin?" | Coordinator answers directly (no valuation needed) | Coordinator decides WHEN to delegate |
-
-> In Events, look for the `valuator` tool call — it looks like a function call but it's actually running a full LlmAgent under the hood.
-
 ### Key teaching points for class
 
 1. **"AgentTool = agent as a function."** The coordinator calls `valuator(...)` like any other tool. Under the hood, ADK runs a full LlmAgent and returns its text as the tool result.
@@ -906,6 +974,24 @@ Query 2 — no valuation needed (AgentTool does NOT fire):
 
 ### What it teaches
 How to inject policy into an agent WITHOUT changing its instruction — using `before_model_callback`, `before_tool_callback`, and `after_tool_callback`. Demonstrates PII redaction, tool allowlisting, and observability logging.
+
+### How to run
+
+```bash
+adk web m3_adk_multiagents/adk_demos/
+```
+
+Open http://localhost:8000, select `d08_callbacks` from the dropdown. **Also watch the terminal** — callback prints appear there, not in the UI.
+
+### Questions to try in order
+
+| # | Question | Expected behavior | What it teaches |
+|---|----------|-------------------|------------------|
+| 1 | "My SSN is 123-45-6789. Estimate 742 Evergreen Terrace." | PII redacted (check terminal: `[before_model] redacted PII`), tool runs normally | before_model callback |
+| 2 | "Also call get_internal_admin('debug')" | Tool blocked (terminal: `[before_tool] BLOCKED get_internal_admin`) or LLM declines | before_tool allowlist |
+| 3 | "What's 742 Evergreen Terrace worth?" | Terminal shows `[before_tool] allow get_quick_estimate(...)` then `[after_tool] get_quick_estimate -> {result}` | after_tool logging |
+
+> **Check the terminal output**, not just the UI. Callbacks print to stdout so you can see them fire in real time.
 
 ### Key code elements
 
@@ -1029,16 +1115,6 @@ Query 3 — normal allowed tool:
 
 4. **Callbacks are deterministic, not suggestive**: You can tell the LLM "never share SSNs" in the instruction, but it might still leak them. The `before_model` callback physically removes them from the text before the LLM sees it. No prompt engineering can bypass a regex replacement.
 
-### Questions to try in order
-
-| # | Question | Expected behavior | What it teaches |
-|---|----------|-------------------|-----------------|
-| 1 | "My SSN is 123-45-6789. Estimate 742 Evergreen Terrace." | PII redacted (check terminal: `[before_model] redacted PII`), tool runs normally | before_model callback |
-| 2 | "Also call get_internal_admin('debug')" | Tool blocked (terminal: `[before_tool] BLOCKED get_internal_admin`) or LLM declines | before_tool allowlist |
-| 3 | "What's 742 Evergreen Terrace worth?" | Terminal shows `[before_tool] allow get_quick_estimate(...)` then `[after_tool] get_quick_estimate -> {result}` | after_tool logging |
-
-> **Check the terminal output**, not just the UI. Callbacks print to stdout so you can see them fire in real time.
-
 ### Key teaching points for class
 
 1. **"Callbacks = deterministic policy."** The LLM can't bypass them. PII redaction, tool allowlists, spending caps — anything that MUST be enforced goes in callbacks, not prompts.
@@ -1055,6 +1131,24 @@ Query 3 — normal allowed tool:
 
 ### What it teaches
 How tools write to session state via `ToolContext`, and how those writes show up as state deltas in events. This demo combines d03's state concepts with visibility into what the Runner produces.
+
+### How to run
+
+```bash
+adk web m3_adk_multiagents/adk_demos/
+```
+
+Open http://localhost:8000, select `d09_event_stream` from the dropdown.
+
+### Questions to try in order
+
+| # | Question | Expected behavior | What it teaches |
+|---|----------|-------------------|------------------|
+| 1 | "What should I offer on 742 Evergreen Terrace?" | Calls `lookup_comps` then `estimate_offer`. Check State tab | ToolContext state writes from tools |
+| 2 | "How about another property?" | LLM asks for address — no tool call, state unchanged | State only changes when tools write to it |
+| 3 | "Try 123 Main St" | Should call both tools again, `offer_count` goes to 2 | State accumulates across turns |
+
+> Focus on the **State tab** after each message — watch keys appear and update live.
 
 ### Key code elements
 
@@ -1079,70 +1173,55 @@ def estimate_offer(comp_avg: int, discount_pct: int, tool_context: ToolContext) 
 | **State writes from tools** | Both tools write to `tool_context.state` — same as d03, but now with two tools that each write different keys |
 | **State deltas in events** | Each event carries a `state_delta` — the diff of what changed during that step. Visible in the left panel event inspector |
 | **Incremental counter** | `offer_count` increments on every call — accumulates across turns (like d03's `offer_history`) |
-| **Parallel tool calls with state** | The LLM called both `lookup_comps` and `estimate_offer` in one turn. Both wrote to state — no conflicts because they use different keys |
+| **Sequential tool chaining** | The LLM called `lookup_comps` first, got the result, then called `estimate_offer` with the actual comp average. The instruction's numbered steps ("1. Call lookup_comps, 2. Call estimate_offer") guided the model to chain them correctly |
 
 ### session.db after running
 
 | Table | Contents |
 |-------|----------|
 | **sessions** | 1 row — state has `last_comp_lookup`, `latest_offer`, `offer_count` |
-| **events** | 6 events across 2 queries |
+| **events** | 6 events for 1 query |
 | **app_states** | Empty |
 | **user_states** | Empty |
 
-**Full event flow (6 events, 2 queries):**
+**Full event flow (6 events, 1 query):**
 
 ```
-Query 1 — two tools called in parallel, both write state:
+Query 1 — two tools called sequentially, both write state:
 
   Event 1 | user:              "What should I offer on 742 Evergreen Terrace?"
   Event 2 | event_stream_demo: tool_call: lookup_comps({"address": "742 Evergreen Terrace"})
-                               tool_call: estimate_offer({"comp_avg": 300000, "discount_pct": 5})
   Event 3 | event_stream_demo: tool_result: lookup_comps -> {comps: [740 ET: $458K, 744 ET: $472K], avg: $465K}
-                               tool_result: estimate_offer -> {offer_price: $285K}
-  Event 4 | event_stream_demo: "Comps: 740 ET sold $458K, 744 ET sold $472K. Avg $465K.
-                                Recommended offer: $285K (5% discount)."
-
-Query 2 — no tool call (LLM asked for clarification):
-
-  Event 5 | user:              "How about another property?"
-  Event 6 | event_stream_demo: "Could you please provide the address of the property you're interested in?"
+  Event 4 | event_stream_demo: tool_call: estimate_offer({"comp_avg": 465000, "discount_pct": 5})
+  Event 5 | event_stream_demo: tool_result: estimate_offer -> {offer_price: $441,750}
+  Event 6 | event_stream_demo: "Comps: 740 ET sold $458K, 744 ET sold $472K. Avg $465K.
+                                Recommended offer: $441,750 (5% discount)."
 ```
 
 **State tab after query 1:**
 ```
 last_comp_lookup: "742 Evergreen Terrace"
-latest_offer: 285000
+latest_offer: 441750
 offer_count: 1
 ```
 
 **Key observations:**
 
-1. **LLM called both tools in parallel**: Event 2 shows two tool calls in one event. ADK executed both and returned both results in Event 3. Same parallel pattern as d03.
+1. **LLM called tools sequentially**: The instruction says "1. Call lookup_comps, 2. Call estimate_offer" and the LLM followed this order. Event 2 calls `lookup_comps`, Event 3 returns the result, Event 4 calls `estimate_offer` with the actual `comp_avg: 465000` from the lookup. The LLM chained the calls correctly — it used the real data, not a hallucinated number.
 
-2. **LLM used wrong comp_avg**: The LLM passed `comp_avg: 300000` to `estimate_offer`, but `lookup_comps` returned `avg_comp_price: 465000`. The LLM made up a number instead of using the tool result. This is a real-world issue — parallel tool calls mean the LLM decides arguments BEFORE seeing results. **Nobody told the LLM to parallelize** — the instruction says "1. Call lookup_comps, 2. Call estimate_offer" (implying sequential). But GPT-4o's function-calling feature can emit multiple tool calls in one response when it thinks they're independent. ADK just executes whatever the model returns.
+2. **Correct offer calculation**: $465,000 × 0.95 = $441,750. The LLM passed the actual comp average to `estimate_offer`, so the math checks out. Compare this to what happens if the LLM parallelizes (it would have to guess `comp_avg` before seeing the lookup result).
 
-3. **State visible in State tab**: After query 1, `last_comp_lookup`, `latest_offer`, and `offer_count` all appeared. This is ToolContext state persistence — same mechanism as d03 but now visible as the demo's primary focus.
+3. **State visible in State tab**: After the query, `last_comp_lookup`, `latest_offer`, and `offer_count` all appeared. This is ToolContext state persistence — same mechanism as d03 but now visible as the demo's primary focus.
 
-4. **Query 2 didn't update state**: "How about another property?" triggered no tool call — the LLM asked for clarification. State remained unchanged. `offer_count` stayed at 1.
+4. **Compare to d03**: d03 used `offer_history` (array accumulation). d09 uses `offer_count` (incremental counter) + `latest_offer` (overwrite). Both use `tool_context.state` — different patterns for different needs.
 
-5. **Compare to d03**: d03 used `offer_history` (array accumulation). d09 uses `offer_count` (incremental counter) + `latest_offer` (overwrite). Both use `tool_context.state` — different patterns for different needs.
-
-### Questions to try in order
-
-| # | Question | Expected behavior | What it teaches |
-|---|----------|-------------------|-----------------|
-| 1 | "What should I offer on 742 Evergreen Terrace?" | Calls `lookup_comps` then `estimate_offer`. Check State tab | ToolContext state writes from tools |
-| 2 | "How about another property?" | LLM asks for address — no tool call, state unchanged | State only changes when tools write to it |
-| 3 | "Try 123 Main St" | Should call both tools again, `offer_count` goes to 2 | State accumulates across turns |
-
-> Focus on the **State tab** after each message — watch keys appear and update live.
+> **Note on parallel tool calls:** Some models may call both tools in parallel (deciding arguments BEFORE seeing results), which can cause `estimate_offer` to receive a hallucinated `comp_avg`. If you see a wrong offer price, this is why — the fix is to use a SequentialAgent (d04) when tool B depends on tool A's output.
 
 ### Key teaching points for class
 
 1. **"State tab = live view of session state."** Every key written by `tool_context.state[...]` appears here immediately after the turn completes.
 2. **"State deltas are per-event."** Click an event in the left panel — each one shows what state changed during that step. This is how you debug state flow.
-3. **"Parallel tool calls can cause stale arguments."** The LLM decided both tool arguments BEFORE seeing either result. That's why `estimate_offer` got `comp_avg: 300K` instead of the actual `465K`. Nobody defined parallel execution — the LLM chose to emit both calls in one response. The fix: use a SequentialAgent (d04) when tool B depends on tool A's output, or make the instruction more explicit ("call lookup_comps FIRST, wait for the result, THEN call estimate_offer with that result").
+3. **"Sequential chaining worked here."** The LLM called `lookup_comps` first, got the real comp average ($465K), then called `estimate_offer` with that value. The numbered instruction steps guided the model. If the LLM had parallelized, it would have had to guess `comp_avg` — the fix for that is a SequentialAgent (d04) to enforce ordering.
 4. **"This is what the negotiation agents look like internally."** `output_key` writes happen as state deltas too — every SequentialAgent step is a state write event.
 
 ---
@@ -1153,6 +1232,23 @@ offer_count: 1
 
 ### What it teaches
 The raw A2A protocol on the wire — hand-crafted JSON-RPC, Agent Card discovery, and task lifecycle states. No SDK helpers for the request — you see the exact HTTP calls.
+
+### How to run
+
+```bash
+# Terminal 1: Start the seller agent with A2A support
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+
+# Terminal 2: Run the script
+python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py
+```
+
+> **Before running the script**, try browsing the Agent Cards directly in your browser. `adk web --a2a` reads each agent's `agent.json` and serves it automatically:
+> - http://127.0.0.1:8000/a2a/buyer_agent/.well-known/agent-card.json
+> - http://127.0.0.1:8000/a2a/seller_agent/.well-known/agent-card.json
+> - http://127.0.0.1:8000/a2a/negotiation/.well-known/agent-card.json
+>
+> These are the same Agent Cards the script fetches programmatically in Step 1. The JSON you see in the browser comes from `agent.json` in each agent's folder (e.g., `negotiation_agents/buyer_agent/agent.json`).
 
 ### A2A Protocol Objects (the building blocks)
 
@@ -1225,7 +1321,7 @@ Response:
   "description": "Real estate seller agent for 742 Evergreen Terrace...",
   "url": "http://localhost:8000/a2a/seller_agent",
   "protocolVersion": "0.3.0",
-  "capabilities": {"streaming": false, "pushNotifications": false},
+  "capabilities": {"streaming": true, "pushNotifications": false},
   "skills": [{
     "id": "negotiation_response",
     "name": "Real Estate Seller Negotiation",
@@ -1286,14 +1382,17 @@ Response:
   "result": {
     "status": "completed",
     "artifacts": [{"parts": [{"kind": "text",
-      "text": "Could you please resend your offer or question?"}]}]
+      "text": "Listing Price: $485,000... Minimum Acceptable Price: $445,000...
+               recommend counter-offer starting at $477,000..."}]}]
   }
 }
 ```
 
-**Key insight:** The task didn't `fail` because the A2A protocol layer worked fine — valid JSON-RPC, valid message structure. The CONTENT was bad, but the LLM handled it gracefully. A task fails only on protocol errors or server crashes, not bad business logic input.
+**Key insight:** The task didn't `fail` because the A2A protocol layer worked fine — valid JSON-RPC, valid message structure. The CONTENT was bad, but the LLM didn't ask for clarification — it treated the vague message as a general inquiry and **dumped its entire property analysis**, including the floor price ($445K). The LLM called all its MCP tools and presented a full strategic briefing. A task fails only on protocol errors or server crashes, not bad business logic input.
 
 **`completed` means "the agent processed the request" — not "the negotiation succeeded."**
+
+> **Security observation:** The broken envelope got the seller to volunteer its floor price ($445K) without even asking. In an adversarial scenario, vague or confusing messages could trick an agent into over-sharing. This is why the `before_tool_callback` allowlist from Demo 08 matters — even if the LLM decides to be helpful, the callback can block access to sensitive tools.
 
 ### Concepts introduced
 
@@ -1306,7 +1405,7 @@ Response:
 | **Artifacts** | Durable outputs of the task. The counter-offer text lives here, not just in the message history |
 | **Parts** | Atomic content units: TextPart, DataPart, FilePart. Demo 10 uses TextPart only |
 | **Task vs Message vs Artifact** | Task = the work request. Messages = the conversation. Artifacts = the deliverables |
-| **Graceful degradation** | Bad input → LLM says "please try again" (completed), not a protocol crash (failed) |
+| **Graceful degradation** | Bad input → LLM copes (completed), not a protocol crash (failed). Response is non-deterministic: may ask for clarification, or may dump full property analysis including sensitive data like the floor price |
 
 ### Key teaching points for class
 
@@ -1325,37 +1424,56 @@ Response:
 ### What it teaches
 How `contextId` threads multiple A2A requests into one conversation. Without it, each message starts a new conversation and the agent forgets everything.
 
+### How to run
+
+```bash
+# Terminal 1: Start the seller agent with A2A support
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+
+# Terminal 2: Run the script
+python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py
+```
+
 ### What happens
 
-The script sends 3 rounds of offers ($432K → $440K → $446K) to the seller agent, reusing the `contextId` from round 1:
+The script sends 3 rounds of offers ($432K → $440K → $446K) to the seller agent, reusing the `contextId` from round 1. Then it sends a **bonus round 4** at $440K (same price as round 2) but **without contextId** — proving the seller has no memory without it.
 
 ```
 Round 1: POST /a2a/seller_agent  (no contextId — server assigns one)
-         → Response includes contextId: "4498d50f-..."
+         → Response includes contextId: "46cc0efb-..."
 
-Round 2: POST /a2a/seller_agent  (+ contextId: "4498d50f-...")
+Round 2: POST /a2a/seller_agent  (+ contextId: "46cc0efb-...")
          → Seller sees round 1 history + round 2 message
 
-Round 3: POST /a2a/seller_agent  (+ contextId: "4498d50f-...")
+Round 3: POST /a2a/seller_agent  (+ contextId: "46cc0efb-...")
          → Seller sees rounds 1-2 history + round 3 message
+
+Round 4: POST /a2a/seller_agent  (NO contextId — server assigns NEW one)
+         → Seller has ZERO memory — treats $440K as first-ever message
 ```
 
 ### Actual results
 
-| Round | Offer | Seller's Response | Why |
-|-------|-------|------------------|-----|
-| 1 | $432K | "Below floor ($445K). Counter at $477K." | MCP tools returned min price = $445K |
-| 2 | $440K | "Still below $445K. Consider $477K." | Remembered round 1, still below floor |
-| 3 | $446K | **"Above $445K. We ACCEPT! Congratulations!"** | $446K > $445K floor → accepted immediately |
+| Round | Offer | contextId | Seller's Response | Why |
+|-------|-------|-----------|------------------|-----|
+| 1 | $432K | `46cc0efb` (new) | "Below floor ($445K). Counter at $477K." | MCP tools returned min price = $445K |
+| 2 | $440K | `46cc0efb` (reused) | "Still below $445K. As previously mentioned..." | Remembered round 1, still below floor |
+| 3 | $446K | `46cc0efb` (reused) | **"Meets the minimum. We ACCEPT! Congratulations!"** | $446K > $445K floor → accepted immediately |
+| **4** | **$440K** | **`dccf15c3` (new)** | **"Below our minimum of $445K. Would you increase?"** | **No memory — same price as round 2, completely different response** |
 
-**Same contextId across all 3 rounds:** `4498d50f-a61e-4a17-8c84-0ea13d49a283`
+**Rounds 1-3 contextId:** `46cc0efb-d3db-40ad-a638-142828a3c06e`
+**Round 4 contextId:** `dccf15c3-99c2-4887-957c-421793aa0201` (different — new conversation)
+
+> **The contrast between round 2 and round 4 is the proof.** Same price ($440K), same seller, same MCP tools — but round 2 says *"as previously mentioned"* (memory) while round 4 treats it as a first-ever offer (no memory). The only difference is contextId.
+
+> **Bonus evidence in the history arrays:** Round 2's history contains only TextParts (user message + agent response) — **no tool call DataParts** — because the seller remembered the floor from round 1's MCP calls. Round 4's history contains **DataParts for `get_market_price` and `get_inventory_level`** — the seller had to call MCP tools fresh because it had zero memory. Tool calls reappear when memory is lost.
 
 ### Concepts introduced
 
 | Concept | Detail |
 |---------|--------|
-| **`contextId`** | A string that ties multiple Tasks into one conversation. Assigned by the server on round 1, reused by the client on rounds 2+ |
-| **Conversation memory via protocol** | Without contextId, the seller would counter at $477K every time (no memory). With it, the seller adjusts based on prior offers |
+| **`contextId`** | A string that ties multiple Tasks into one conversation. Assigned by the server on round 1, reused by the client on rounds 2+. Round 4 proves: drop contextId → drop memory |
+| **Conversation memory via protocol** | Without contextId, the seller counters at $477K every time (no memory). With it, the seller adjusts based on prior offers. Round 2 vs round 4 is the direct proof — same $440K, opposite responses |
 | **A2A threading vs ADK sessions** | `contextId` in A2A = `session_id` in ADK. Same concept (conversation continuity), different level (HTTP vs in-process) |
 | **Acceptance logic** | The seller instruction says "if offer >= minimum, ACCEPT immediately." Round 3 ($446K > $445K) triggered this — the seller remembered the floor from MCP tools |
 
@@ -1364,16 +1482,27 @@ Round 3: POST /a2a/seller_agent  (+ contextId: "4498d50f-...")
 1. **"contextId = session_id for HTTP."** In d03, session state persisted across turns within `adk web`. Here, `contextId` does the same across HTTP requests. Without it, every POST is a brand new conversation.
 2. **"The seller's response changed across rounds."** Round 1: "$432K is below floor." Round 2: "STILL below." Round 3: "ACCEPT." The seller remembered the negotiation history because all 3 rounds shared the same contextId.
 3. **"$446K crossed the $445K floor."** The acceptance was immediate — the seller didn't try to counter higher. This is the MCP-driven floor enforcement from `get_minimum_acceptable_price` combined with conversation context.
-4. **"This is what a real multi-round negotiation looks like over A2A."** Each round is an independent HTTP request, but contextId ties them together into one coherent negotiation.
+4. **"Round 4 is the proof by contradiction."** Same $440K as round 2, but no contextId → the seller treats it as a first-ever offer. Compare round 2 ("as previously mentioned") to round 4 ("Thank you for your offer") — memory vs amnesia. **contextId is the ONLY difference.**
+5. **"This is what a real multi-round negotiation looks like over A2A."** Each round is an independent HTTP request, but contextId ties them together into one coherent negotiation.
 
 ---
 
-## Demo 12 — A2A Parts & Artifacts (`a2a_12_parts_and_artifacts.py`)
+## Demo 12 — A2A Multi-Part Messages (`a2a_12_parts_and_artifacts.py`)
 
 **File:** `adk_demos/a2a_12_parts_and_artifacts.py` (terminal script)
 
 ### What it teaches
-How to send multi-part Messages (TextPart + DataPart in one message) and inspect Artifacts on the response. Demonstrates the difference between conversational content (Parts in Messages) and durable outputs (Artifacts on Tasks).
+How to send multi-part Messages (TextPart + DataPart in one message) and inspect the structured response history, including MCP tool calls appearing as DataParts.
+
+### How to run
+
+```bash
+# Terminal 1: Start the seller agent with A2A support
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+
+# Terminal 2: Run the script
+python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py
+```
 
 ### What happened
 
@@ -1390,14 +1519,6 @@ Same offer in two formats — human-readable text AND structured JSON. The agent
 3. `role=agent, 3 DataParts` — MCP tool RESULTS (structured responses from each tool)
 4. `role=agent, 1 TextPart` — the final acceptance text
 
-**Artifact:** The acceptance text was also attached as an Artifact:
-```json
-{
-  "artifactId": "f7ae8903-...",
-  "parts": [{"kind": "text", "text": "Thank you for your offer of $445,000... we accept!"}]
-}
-```
-
 **The seller ACCEPTED at $445K** — exactly at the floor price.
 
 ### Concepts introduced
@@ -1406,16 +1527,14 @@ Same offer in two formats — human-readable text AND structured JSON. The agent
 |---------|--------|
 | **Multi-part Messages** | One Message can carry multiple Parts of different types. TextPart for humans, DataPart for machines |
 | **DataPart** | Structured JSON content: `{"kind": "data", "data": {...}}`. Unlike TextPart (free text), DataPart is machine-parseable without LLM inference |
-| **Parts vs Artifacts** | Parts flow in Messages (conversational). Artifacts are attached to the completed Task (durable outputs). The same text can appear in both |
-| **Tool calls as DataParts** | MCP tool calls and results appear as DataParts in the message history — structured, not text |
-| **Artifact = deliverable** | Think of it as the final report. Messages = the email thread. Artifact = the attached PDF |
+| **Tool calls as DataParts** | MCP tool calls and results appear as DataParts in the message history — structured, not text. Same mechanism we saw in Demo 11 round 4 |
 
 ### Key teaching points for class
 
 1. **"Use DataPart when you need both human and machine representations."** The offer was sent as TextPart (LLM reads it) AND DataPart (code parses it). Both travel in the same Message.
 2. **"Tool calls show up as DataParts in history."** The MCP tool calls and results are structured data, not text — you can programmatically inspect what tools were called without parsing text.
-3. **"Artifacts are separate from messages."** The acceptance text appears in BOTH the history (as a Message) and as an Artifact. Artifacts are for things you want to fetch later.
-4. **"$445K = exact floor = immediate acceptance."** The seller instruction says "if offer >= minimum, ACCEPT immediately." $445K = $445K floor → accepted.
+3. **"$445K = exact floor = immediate acceptance."** The seller instruction says "if offer >= minimum, ACCEPT immediately." $445K = $445K floor → accepted.
+4. **"This connects back to Demo 11."** Remember round 4's history had tool-call DataParts because the seller had no contextId? Same mechanism here — DataParts are how A2A exposes tool usage in the history.
 
 ---
 
@@ -1425,6 +1544,16 @@ Same offer in two formats — human-readable text AND structured JSON. The agent
 
 ### What it teaches
 The `message/stream` method — receiving incremental SSE events as the agent processes a request, seeing the Task lifecycle in real time.
+
+### How to run
+
+```bash
+# Terminal 1: Start the seller agent with A2A support
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+
+# Terminal 2: Run the script
+python m3_adk_multiagents/adk_demos/a2a_13_streaming.py
+```
 
 ### What happened
 
@@ -1474,6 +1603,14 @@ The `message/stream` method — receiving incremental SSE events as the agent pr
 ### buyer_agent
 
 **File:** `negotiation_agents/buyer_agent/agent.py` (~70 lines)
+
+**How to run:**
+
+```bash
+adk web m3_adk_multiagents/negotiation_agents/buyer_agent/
+```
+
+Open http://localhost:8000, select `buyer_agent` from the dropdown.
 
 **What it is:** A standalone `LlmAgent` with `MCPToolset(pricing_server)` and a `before_tool_callback` allowlist. Represents the buyer's perspective — can see market prices and discount analysis but NOT the seller's floor price.
 
@@ -1540,6 +1677,14 @@ Query 2: "I want to make an offer. What do you recommend?"
 ### seller_agent
 
 **File:** `negotiation_agents/seller_agent/agent.py` (~85 lines)
+
+**How to run:**
+
+```bash
+adk web m3_adk_multiagents/negotiation_agents/seller_agent/
+```
+
+Open http://localhost:8000, select `seller_agent` from the dropdown.
 
 **What it is:** A standalone `LlmAgent` with TWO `MCPToolset`s (pricing + inventory) and a `before_tool_callback` allowlist. Has access to `get_minimum_acceptable_price` — the seller's secret floor.
 
@@ -1617,6 +1762,14 @@ Query 2: "Buyer increases to $446,000"
 ### negotiation orchestrator
 
 **File:** `negotiation_agents/negotiation/agent.py` (~100 lines)
+
+**How to run:**
+
+```bash
+adk web m3_adk_multiagents/negotiation_agents/negotiation/
+```
+
+Open http://localhost:8000, select `negotiation` from the dropdown. Type "Start negotiation for 742 Evergreen Terrace" to kick off a full buyer ↔ seller loop.
 
 **What it is:** A `LoopAgent` wrapping a `SequentialAgent(buyer, seller)` where both agents have real MCP tools. The seller calls a `submit_decision` tool to write a structured signal to state — the `after_agent_callback` reads that dict, not free text.
 

@@ -4,6 +4,8 @@ Demo 11 — A2A Context Threading
 A2A uses `contextId` to thread multiple messages into one conversation.
 This script sends 3 negotiation rounds to the seller, reusing the
 contextId from round 1 so all rounds are recognized as one negotiation.
+Then it sends a BONUS round 4 WITHOUT contextId to prove what happens
+when the seller has no memory of prior rounds.
 
 WHY CONTEXT THREADING MATTERS:
   Without contextId, each POST to the seller starts a BRAND NEW conversation.
@@ -14,6 +16,10 @@ WHY CONTEXT THREADING MATTERS:
     Round 2: $440K → "STILL below. Counter at $477K."
     Round 3: $446K → "Above $445K! ACCEPT!"
 
+  Bonus round (no contextId):
+    Round 4: $440K → "Below $445K. Counter at $477K."
+    Same price as round 2, but no memory — seller treats it as brand new.
+
   contextId is A2A's equivalent of ADK's session_id — same concept
   (conversation continuity), different level (HTTP vs in-process).
 
@@ -22,6 +28,7 @@ HOW IT WORKS:
   2. Server assigns a contextId and returns it in the response
   3. Rounds 2-3: client includes the SAME contextId in requests
   4. Server loads conversation history for that contextId each time
+  5. Round 4: client sends WITHOUT contextId again — fresh conversation
 
 THIS SCRIPT USES THE A2A SDK (unlike demo 10 which was raw HTTP):
   - A2ACardResolver: fetches Agent Card for discovery
@@ -138,8 +145,47 @@ async def main() -> None:
                 ).get("contextId")
 
             print(f"\n=== round {round_num} (contextId={context_id}) ===")
-            # Truncated to 1200 chars — remove [:1200] to see full response
-            print(json.dumps(result, indent=2)[:1200])
+            # Truncated to 3000 chars — remove [:3000] to see full response
+            print(json.dumps(result, indent=2)[:3000])
+
+        # ── Step 3: Bonus round — same price, NO contextId ────────────
+        #
+        # Send $440K again — the same price as round 2. But this time,
+        # do NOT include contextId. The server treats this as a brand-new
+        # conversation with zero history.
+        #
+        # Expected behavior: the seller has no memory of rounds 1-3.
+        # It calls MCP tools fresh, discovers the $445K floor again,
+        # and counters at $477K — exactly like round 1.
+        #
+        # This proves that contextId is the ONLY thing threading the
+        # conversation. Without it, every request is a clean slate.
+        #
+        bonus_price = 440_000
+        params = MessageSendParams(
+            message=Message(
+                messageId=f"msg_{uuid.uuid4().hex[:8]}",
+                role=Role.user,
+                parts=[
+                    TextPart(
+                        text=buyer_round(session_id, 4, bonus_price)
+                    )
+                ],
+                contextId=None,  # ← deliberately no contextId
+            )
+        )
+        request = SendMessageRequest(
+            id=f"req_{uuid.uuid4().hex[:8]}", params=params
+        )
+        response = await client.send_message(request)
+        result = response.model_dump(mode="json").get("result", {})
+        new_context = result.get("contextId") or (
+            result.get("status") or {}
+        ).get("contextId")
+
+        print(f"\n=== round 4 — NO contextId (new contextId={new_context}) ===")
+        print("Same $440K as round 2, but seller has NO memory of prior rounds.")
+        print(json.dumps(result, indent=2)[:3000])
 
 
 if __name__ == "__main__":
