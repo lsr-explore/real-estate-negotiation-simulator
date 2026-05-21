@@ -140,7 +140,11 @@ STRATEGY:
 - ALWAYS submit your decision via `submit_decision(action="OFFER", price=X)`.
 
 When ready to commit, call `submit_decision`. Don't just write your offer
-in prose — call the tool."""
+in prose — call the tool.
+
+IMPORTANT: If a tool call is rejected because the price exceeds the budget,
+immediately retry with the maximum allowed price. Do NOT ask the user to
+adjust the budget — just submit at the cap."""
 
 
 MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")

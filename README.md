@@ -251,7 +251,6 @@ Module 2 and Module 3 ship hands-on exercises with complete, runnable solutions.
 | M3 | `ex07_parallel_negotiation.md` | `[Stretch]` | Negotiate with two sellers in parallel using `ParallelAgent`, then pick the best deal |
 | M3 | `ex08_shared_market_intel.md` | `[Core]` | Use `app:` state as shared market intelligence — cache pricing lookups for all agents |
 | M3 | `ex09_adaptive_strategy.md` | `[Stretch]` | Episodic memory + strategy advisor `AgentTool` that analyses concession patterns |
-| M3 | `stretch_streaming_client.md` | `[Stretch]` | Convert M3.3 to use `message/stream` and render task lifecycle events as they arrive |
 
 Each solution lives in its module's `solution/` folder as a self-contained, runnable package — `agent.py` files you can launch directly with `adk web`, or scripts you can run with `python`. The instructor walks through each solution live during the review session.
 

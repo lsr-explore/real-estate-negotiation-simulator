@@ -187,9 +187,9 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 
 ## Exercises
 
-Ten exercises — designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
+Nine exercises — designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
 
-Each exercise extends the real-estate codebase with a production-relevant pattern. Difficulty mix: 1 starter, 6 core, 3 stretch.
+Each exercise extends the real-estate codebase with a production-relevant pattern. Difficulty mix: 1 starter, 6 core, 2 stretch.
 
 | Exercise | Difficulty | Reinforces | Task |
 |---|---|---|---|
@@ -202,8 +202,6 @@ Each exercise extends the real-estate codebase with a production-relevant patter
 | [`ex07_parallel_negotiation.md`](exercises/ex07_parallel_negotiation.md) | `[Stretch]` | Demos 04, 05, 06 (Sequential, Parallel, Loop) | Build a system that negotiates with two sellers in parallel using `ParallelAgent`, then a `deal_picker` agent compares outcomes and recommends the best deal. Composes all three workflow agent types. |
 | [`ex08_shared_market_intel.md`](exercises/ex08_shared_market_intel.md) | `[Core]` | Demo 03 (`app:` state) | Use `app:`-scoped state as a shared market intelligence layer. An `after_tool_callback` caches every pricing lookup; both buyer and seller reference the same comparable sales data. |
 | [`ex09_adaptive_strategy.md`](exercises/ex09_adaptive_strategy.md) | `[Stretch]` | Demos 03, 07 (state, AgentTool) | Add episodic negotiation memory and a strategy advisor sub-agent (wrapped as `AgentTool`) that analyses concession patterns and recommends tactics before each buyer offer. |
-| [`stretch_streaming_client.md`](exercises/stretch_streaming_client.md) | `[Stretch]` | Demo 13 (A2A streaming) | Convert the multi-round client to use `message/stream` instead of `message/send`. Render task lifecycle events to console as they arrive. |
-
 Each solution lives in `solution/<exercise_name>/` as a self-contained, runnable package — most are launchable directly with `adk web solution/<exercise_name>/`. The instructor walks through each solution live during the review session.
 
 ---

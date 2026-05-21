@@ -26,6 +26,7 @@ To demo:
     #    Expect: stall detected at round 3-4, NOT round 5.
 """
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -186,7 +187,6 @@ def _init_round_state(callback_context: CallbackContext):
 
 # When STALL_DEMO=true, buyer budget drops to $440K (below seller's $445K floor)
 # to guarantee a no-ZOPA stall. Default is $460K (healthy ZOPA).
-import os
 _STALL_DEMO = os.environ.get("STALL_DEMO", "").lower() == "true"
 _BUYER_BUDGET = 440_000 if _STALL_DEMO else 460_000
 _BUYER_TARGET_LO = _BUYER_BUDGET - 10_000
