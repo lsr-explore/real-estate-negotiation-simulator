@@ -55,4 +55,8 @@ Requirements:
 
 ---
 
-> **Solution:** see `solution/ex02_multi_server_agent/` for the complete, runnable agent. The instructor will walk through it live during the review session.
+> **Solution:** see `solution/ex02_multi_server_agent/` for the complete, runnable agent. Run it with:
+> ```bash
+> adk web m2_mcp/solution/ex02_multi_server_agent/
+> ```
+> The instructor will walk through it live during the review session.

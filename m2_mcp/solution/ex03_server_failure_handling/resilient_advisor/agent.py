@@ -43,6 +43,7 @@ Four demo scenarios:
       startup validation, not after_tool_callback.
 """
 
+import os
 import sys
 from pathlib import Path
 

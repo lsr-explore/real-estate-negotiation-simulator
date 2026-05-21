@@ -78,7 +78,14 @@ root_agent = LlmAgent(
         "You have tools that query pricing and inventory databases. "
         "Use whichever tools are relevant for the user's question. "
         "Never refuse a data lookup — if a tool exists for it, call it.\n\n"
-        "For complex questions, call multiple tools and synthesize. "
+        "ALWAYS call at least one tool before answering — never rely on "
+        "assumptions or general knowledge when a tool lookup is available.\n\n"
+        "When the user asks for an analysis or recommendation (e.g. "
+        "'should I make an offer', 'walk me through'), gather ALL "
+        "relevant data first: look up the market price, the seller's "
+        "minimum acceptable price, inventory levels, and any applicable "
+        "discounts. Call every tool that could provide useful context "
+        "before synthesizing your answer.\n\n"
         "Always cite the data source in your answer."
     ),
     tools=[
