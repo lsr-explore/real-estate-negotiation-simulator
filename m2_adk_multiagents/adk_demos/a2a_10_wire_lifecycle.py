@@ -2,13 +2,13 @@
 Demo 10 — A2A Wire Format and Task Lifecycle
 ================================================
 Peek under the hood of the A2A protocol. This script:
-  1. Fetches the Agent Card (discovery)
-  2. Hand-crafts a JSON-RPC `message/send` request (valid envelope)
+  1. Fetches the Agent Card (discovery) via A2ACardResolver
+  2. Sends a valid offer using typed SDK objects (DataPart)
   3. Sends a broken envelope to show graceful error handling
 
-NO A2A SDK used for the HTTP calls — just raw httpx so you see the
-exact wire format. This is what happens at the HTTP level when one
-agent talks to another over A2A.
+Uses the A2A SDK for type-safe message construction and transport.
+We print the serialized wire format so you can see exactly what
+JSON-RPC frames go over the wire.
 
 WHAT IS A2A?
   A2A (Agent-to-Agent) is an open protocol for agents to discover and
@@ -39,46 +39,17 @@ import json
 import uuid
 
 import httpx
-
-
-def make_jsonrpc_envelope(text: str) -> dict:
-    """Build a raw JSON-RPC 2.0 envelope for A2A message/send.
-
-    This is the exact wire format the A2A protocol uses. Every A2A
-    request is a JSON-RPC 2.0 call with method "message/send" and
-    a Message object in the params.
-
-    The Message contains:
-      - messageId: unique ID for deduplication
-      - role: "user" (we're the client sending to the agent)
-      - parts: array of content chunks (TextPart here)
-
-    Example output:
-    {
-      "jsonrpc": "2.0",
-      "id": "req_5e8c7b2a",
-      "method": "message/send",
-      "params": {
-        "message": {
-          "messageId": "msg_7a4516a2",
-          "role": "user",
-          "parts": [{"kind": "text", "text": "...your offer JSON..."}]
-        }
-      }
-    }
-    """
-    return {
-        "jsonrpc": "2.0",
-        "id": f"req_{uuid.uuid4().hex[:8]}",
-        "method": "message/send",
-        "params": {
-            "message": {
-                "messageId": f"msg_{uuid.uuid4().hex[:8]}",
-                "role": "user",
-                "parts": [{"kind": "text", "text": text}],
-            }
-        },
-    }
+from a2a.client import A2ACardResolver, A2AClient
+from a2a.types import (
+    DataPart,
+    Message,
+    MessageSendParams,
+    Role,
+    SendMessageRequest,
+    SendMessageSuccessResponse,
+    Task,
+    TextPart,
+)
 
 
 async def main() -> None:
@@ -90,7 +61,6 @@ async def main() -> None:
         default="http://127.0.0.1:8000/a2a/seller_agent",
     )
     args = parser.parse_args()
-    base = args.seller_url.rstrip("/")
 
     async with httpx.AsyncClient(timeout=60.0) as http:
 
@@ -102,100 +72,105 @@ async def main() -> None:
         #   - Where to send messages (url)
         #   - What features are supported (streaming, push notifications)
         #
-        # The card lives at a well-known URL:
+        # A2ACardResolver fetches from the well-known URL:
         #   GET /<agent>/.well-known/agent-card.json
         #
-        # In our workshop, agent.json in the agent folder defines this card.
-        # adk web --a2a serves it automatically.
-        #
         print("=== 1. AGENT CARD (discovery) ===")
-        card_resp = await http.get(f"{base}/.well-known/agent-card.json")
-        card = card_resp.json()
-        print(json.dumps(card, indent=2))
+        resolver = A2ACardResolver(httpx_client=http, base_url=args.seller_url)
+        card = await resolver.get_agent_card()
+        print(json.dumps(card.model_dump(mode="json"), indent=2))
         print()
 
-        # ── Step 2: Valid envelope — see task lifecycle ────────────────
+        client = A2AClient(httpx_client=http, agent_card=card)
+
+        # ── Step 2: Valid offer — see task lifecycle ───────────────────
         #
-        # Now we send a real offer to the seller agent.
-        #
-        # The offer is a JSON string inside a TextPart. The A2A protocol
-        # doesn't care about the offer format — it just ferries the text.
-        # The AGENT parses the JSON and reasons about it.
+        # Build a typed offer using DataPart (structured dict) instead
+        # of stuffing JSON into a TextPart string. The SDK handles all
+        # JSON-RPC framing — no manual envelope construction needed.
         #
         # What happens server-side:
         #   1. adk web receives the JSON-RPC request
         #   2. Creates a Task (status: submitted)
         #   3. Runs the seller LlmAgent (status: working)
-        #      - LlmAgent calls MCP tools (get_market_price, get_minimum_acceptable_price)
+        #      - LlmAgent calls MCP tools (get_market_price, etc.)
         #      - LLM produces counter-offer based on tool results
         #   4. Task completes (status: completed)
-        #   5. Response includes:
-        #      - contextId: reuse this for round 2 (demo 11)
-        #      - history: the full message exchange
-        #      - artifacts: the counter-offer as a durable output
+        #   5. Response includes contextId, history, and artifacts
         #
-        print("=== 2. VALID ENVELOPE ===")
-        valid_text = json.dumps({
-            "session_id": f"demo-{uuid.uuid4().hex[:6]}",
+        print("=== 2. VALID OFFER ===")
+        offer = {
             "round": 1,
             "from_agent": "buyer",
             "to_agent": "seller",
             "message_type": "OFFER",
             "price": 440_000,
-            "message": "Opening offer at $440k, 30-day close, pre-approved.",
             "conditions": ["inspection contingency"],
             "closing_timeline_days": 30,
-        })
-        body = make_jsonrpc_envelope(valid_text)
-        print("REQUEST:")
-        print(json.dumps(body, indent=2))
-
-        resp = await http.post(base, json=body)
-        result = resp.json()
-
-        # Extract the task status from the response.
-        # A2A response structure:
-        #   {"jsonrpc": "2.0", "result": {"status": {"state": "completed"}, ...}}
-        status = (
-            (result.get("result") or {})
-            .get("status", {})
-            .get("state", "?")
+        }
+        request = SendMessageRequest(
+            id=f"req_{uuid.uuid4().hex[:8]}",
+            params=MessageSendParams(
+                message=Message(
+                    messageId=f"msg_{uuid.uuid4().hex[:8]}",
+                    role=Role.user,
+                    parts=[
+                        TextPart(text="Opening offer at $440k, 30-day close, pre-approved."),
+                        DataPart(data=offer),
+                    ],
+                )
+            ),
         )
-        print(f"\nRESPONSE (status={status}):")
-        # Truncated to 1500 chars for readability — full response is much longer.
-        # Remove [:1500] to see the complete JSON (counter-offer, history, artifacts).
-        print(json.dumps(result, indent=2)[:1500])
+
+        # Print the wire format — this is what the SDK sends over HTTP
+        print("WIRE FORMAT (what the SDK sends):")
+        print(json.dumps(request.model_dump(mode="json", exclude_none=True), indent=2))
+
+        response = await client.send_message(request)
+        result = response.root
+
+        if isinstance(result, SendMessageSuccessResponse):
+            task_or_msg = result.result
+            if isinstance(task_or_msg, Task):
+                print(f"\nRESPONSE (status={task_or_msg.status.state.value}):")
+                print(f"  contextId: {task_or_msg.context_id}")
+                print(f"  artifacts: {len(task_or_msg.artifacts or [])}")
+            print(json.dumps(result.model_dump(mode="json"), indent=2)[:1500])
+        else:
+            print(f"ERROR: {json.dumps(result.model_dump(mode='json'), indent=2)}")
         print()
 
         # ── Step 3: Broken envelope — graceful error handling ─────────
         #
-        # Send garbage data — no session_id, no price, no real structure.
-        # This tests how the agent handles bad input.
+        # Send garbage data — no price, no real structure.
+        # The A2A protocol still works (valid JSON-RPC, valid Message)
+        # so the task shows "completed" not "failed". The LLM handles
+        # bad content gracefully: "Could you please resend your offer?"
         #
-        # KEY INSIGHT: The task will still show status "completed" (not "failed")
-        # because the A2A PROTOCOL worked correctly — valid JSON-RPC, valid Message.
-        # The CONTENT was bad, but the LLM handled it gracefully:
-        #   "Could you please resend your offer?"
-        #
-        # "completed" means the agent processed the request.
-        # It does NOT mean the negotiation succeeded.
-        # A task only "fails" on protocol errors or server crashes.
+        # "completed" = the agent processed the request.
+        # "failed" = protocol error or server crash.
         #
         print("=== 3. BROKEN ENVELOPE (expect graceful handling) ===")
-        broken_text = json.dumps({"from_agent": "buyer", "message": "broken"})
-        body = make_jsonrpc_envelope(broken_text)
-        print("REQUEST:")
-        print(json.dumps(body, indent=2))
-
-        resp = await http.post(base, json=body)
-        result = resp.json()
-        status = (
-            (result.get("result") or {})
-            .get("status", {})
-            .get("state", "?")
+        request = SendMessageRequest(
+            id=f"req_{uuid.uuid4().hex[:8]}",
+            params=MessageSendParams(
+                message=Message(
+                    messageId=f"msg_{uuid.uuid4().hex[:8]}",
+                    role=Role.user,
+                    parts=[TextPart(text="broken message with no real offer")],
+                )
+            ),
         )
-        print(f"RESPONSE (status={status}):")
-        print(json.dumps(result, indent=2)[:1500])
+        response = await client.send_message(request)
+        result = response.root
+
+        if isinstance(result, SendMessageSuccessResponse):
+            task_or_msg = result.result
+            if isinstance(task_or_msg, Task):
+                print(f"RESPONSE (status={task_or_msg.status.state.value}):")
+            print(json.dumps(result.model_dump(mode="json"), indent=2)[:1500])
+        else:
+            print(f"ERROR: {json.dumps(result.model_dump(mode='json'), indent=2)}")
 
 
 if __name__ == "__main__":

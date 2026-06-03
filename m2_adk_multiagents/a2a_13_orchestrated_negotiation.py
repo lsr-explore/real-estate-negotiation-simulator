@@ -43,12 +43,14 @@ import json
 import uuid
 
 import httpx
-from a2a.client import A2ACardResolver
+from a2a.client import A2ACardResolver, A2AClient
 from a2a.types import (
     Message,
     MessageSendParams,
     Role,
     SendMessageRequest,
+    SendMessageSuccessResponse,
+    Task,
     TextPart,
 )
 
@@ -56,49 +58,45 @@ BASE_URL = "http://127.0.0.1:8000"
 MAX_ROUNDS = 5
 
 
-def extract_agent_text(result: dict) -> str:
-    """Extract the agent's text response from an A2A result."""
+def extract_agent_text(task: Task) -> str:
+    """Extract the agent's text response from an A2A Task."""
     # Try artifacts first (durable output)
-    for artifact in result.get("artifacts") or []:
-        for part in artifact.get("parts") or []:
-            if part.get("kind") == "text":
-                return part["text"]
+    for artifact in task.artifacts or []:
+        for part in artifact.parts:
+            if isinstance(part.root, TextPart):
+                return part.root.text
     # Fall back to last agent message in history
-    for msg in reversed(result.get("history") or []):
-        if msg.get("role") == "agent":
-            for part in msg.get("parts") or []:
-                if part.get("kind") == "text":
-                    return part["text"]
+    for msg in reversed(task.history or []):
+        if msg.role == Role.agent:
+            for part in msg.parts:
+                if isinstance(part.root, TextPart):
+                    return part.root.text
     return "(no response)"
 
 
 async def send_a2a_message(
-    http: httpx.AsyncClient,
-    agent_card: dict,
+    client: A2AClient,
     text: str,
     context_id: str | None = None,
-) -> tuple[dict, str | None]:
-    """Send a message to an A2A agent and return (result, contextId)."""
-    url = agent_card["url"]
-    request_body = {
-        "jsonrpc": "2.0",
-        "id": f"req_{uuid.uuid4().hex[:8]}",
-        "method": "message/send",
-        "params": {
-            "message": {
-                "messageId": f"msg_{uuid.uuid4().hex[:8]}",
-                "role": "user",
-                "parts": [{"kind": "text", "text": text}],
-                **({"contextId": context_id} if context_id else {}),
-            }
-        },
-    }
-    resp = await http.post(url, json=request_body)
-    resp.raise_for_status()
-    data = resp.json()
-    result = data.get("result", {})
-    new_context_id = result.get("contextId")
-    return result, new_context_id
+) -> tuple[Task, str | None]:
+    """Send a message to an A2A agent and return (Task, contextId)."""
+    request = SendMessageRequest(
+        id=f"req_{uuid.uuid4().hex[:8]}",
+        params=MessageSendParams(
+            message=Message(
+                messageId=f"msg_{uuid.uuid4().hex[:8]}",
+                role=Role.user,
+                parts=[TextPart(text=text)],
+                contextId=context_id,
+            )
+        ),
+    )
+    response = await client.send_message(request)
+    result = response.root
+    if isinstance(result, SendMessageSuccessResponse) and isinstance(result.result, Task):
+        task = result.result
+        return task, task.context_id
+    raise RuntimeError(f"Unexpected response: {response.model_dump(mode='json')}")
 
 
 async def main() -> None:
@@ -125,19 +123,19 @@ async def main() -> None:
 
         buyer_resolver = A2ACardResolver(httpx_client=http, base_url=buyer_url)
         buyer_card = await buyer_resolver.get_agent_card()
-        buyer_card_dict = buyer_card.model_dump(mode="json")
+        buyer_client = A2AClient(httpx_client=http, agent_card=buyer_card)
         print(f"\nBuyer Agent Card:")
-        print(f"  Name:   {buyer_card_dict['name']}")
-        print(f"  URL:    {buyer_card_dict['url']}")
-        print(f"  Skills: {[s['name'] for s in buyer_card_dict.get('skills', [])]}")
+        print(f"  Name:   {buyer_card.name}")
+        print(f"  URL:    {buyer_card.url}")
+        print(f"  Skills: {[s.name for s in buyer_card.skills]}")
 
         seller_resolver = A2ACardResolver(httpx_client=http, base_url=seller_url)
         seller_card = await seller_resolver.get_agent_card()
-        seller_card_dict = seller_card.model_dump(mode="json")
+        seller_client = A2AClient(httpx_client=http, agent_card=seller_card)
         print(f"\nSeller Agent Card:")
-        print(f"  Name:   {seller_card_dict['name']}")
-        print(f"  URL:    {seller_card_dict['url']}")
-        print(f"  Skills: {[s['name'] for s in seller_card_dict.get('skills', [])]}")
+        print(f"  Name:   {seller_card.name}")
+        print(f"  URL:    {seller_card.url}")
+        print(f"  Skills: {[s.name for s in seller_card.skills]}")
 
         # ── Step 2: Multi-round negotiation ───────────────────────────
         print("\n" + "=" * 60)
@@ -167,10 +165,10 @@ async def main() -> None:
                 )
 
             print(f"\n→ Sending to BUYER: {buyer_prompt[:80]}...")
-            buyer_result, buyer_context_id = await send_a2a_message(
-                http, buyer_card_dict, buyer_prompt, buyer_context_id
+            buyer_task, buyer_context_id = await send_a2a_message(
+                buyer_client, buyer_prompt, buyer_context_id
             )
-            buyer_offer_text = extract_agent_text(buyer_result)
+            buyer_offer_text = extract_agent_text(buyer_task)
             print(f"← Buyer says: {buyer_offer_text[:200]}...")
             print(f"  (contextId: {buyer_context_id})")
 
@@ -181,18 +179,14 @@ async def main() -> None:
             )
 
             print(f"\n→ Sending to SELLER: {seller_prompt[:80]}...")
-            seller_result, seller_context_id = await send_a2a_message(
-                http, seller_card_dict, seller_prompt, seller_context_id
+            seller_task, seller_context_id = await send_a2a_message(
+                seller_client, seller_prompt, seller_context_id
             )
-            seller_response_text = extract_agent_text(seller_result)
+            seller_response_text = extract_agent_text(seller_task)
             print(f"← Seller says: {seller_response_text[:200]}...")
             print(f"  (contextId: {seller_context_id})")
 
-            # ── Check for acceptance ──────────────────────────────────
-            # The seller's standalone agent uses the same instruction as
-            # the orchestrator: "respond with ACCEPT or COUNTER."
-            # We check for COUNTER first — if present, it's definitely
-            # not an acceptance (even if "acceptable" appears elsewhere).
+            # ── Check for acceptance ──────────────────────────────────────
             import re
             has_counter = bool(re.search(r'\bCOUNTER\b', seller_response_text, re.IGNORECASE))
             has_accept = bool(re.search(r'\bACCEPT\b', seller_response_text, re.IGNORECASE))

@@ -50,6 +50,8 @@ from a2a.types import (
     MessageSendParams,
     Role,
     SendMessageRequest,
+    SendMessageSuccessResponse,
+    Task,
     TextPart,
 )
 
@@ -79,14 +81,14 @@ async def main() -> None:
     # This is the key concept: we send the SAME offer in TWO formats
     # inside a single Message. The agent can use whichever is easier:
     #
-    #   parts[0] = TextPart  → JSON string (the LLM reads this)
+    #   parts[0] = TextPart  → human-readable text (the LLM reads this)
     #   parts[1] = DataPart  → structured dict (code can parse this directly)
     #
     # In production, you'd use DataPart for machine-to-machine fields
     # (prices, IDs, timestamps) and TextPart for human context.
     #
     parts = [
-        TextPart(text=json.dumps(buyer_envelope)),
+        TextPart(text="Final-and-best offer at $445k for 742 Evergreen Terrace."),
         DataPart(
             data={
                 "hint": "machine-readable copy of the offer",
@@ -115,28 +117,27 @@ async def main() -> None:
         )
         response = await client.send_message(request)
 
-    dumped = response.model_dump(mode="json")
-    result = dumped.get("result", dumped)
+    result = response.root
 
     # ── Inspect response status ───────────────────────────────────────
     print("=== response status ===")
-    status = (result.get("status") or {}).get("state", "?")
-    print(f"state: {status}")
+    if isinstance(result, SendMessageSuccessResponse) and isinstance(result.result, Task):
+        task = result.result
+        print(f"state: {task.status.state.value}")
 
-    # ── Inspect response message parts ────────────────────────────────
-    print("\n=== response message parts ===")
-    history = result.get("history", [])
-    for msg in history:
-        role = msg.get("role", "?")
-        msg_parts = msg.get("parts", [])
-        print(f"  role={role}, {len(msg_parts)} part(s):")
-        for i, part in enumerate(msg_parts):
-            kind = part.get("kind", part.get("type", "?"))
-            print(f"    [{i}] kind={kind}")
-            if "text" in part:
-                print(f"        text={part['text'][:200]}...")
-            if "data" in part:
-                print(f"        data keys={list(part['data'].keys())}")
+        # ── Inspect response message parts ────────────────────────────────
+        print("\n=== response message parts ===")
+        for msg in task.history or []:
+            print(f"  role={msg.role.value}, {len(msg.parts)} part(s):")
+            for i, part in enumerate(msg.parts):
+                inner = part.root
+                print(f"    [{i}] kind={inner.kind}")
+                if isinstance(inner, TextPart):
+                    print(f"        text={inner.text[:200]}...")
+                if isinstance(inner, DataPart):
+                    print(f"        data keys={list(inner.data.keys())}")
+    else:
+        print(f"ERROR or unexpected response type")
 
     # ── Key takeaways ─────────────────────────────────────────────────
     print("\n=== key takeaways ===")
@@ -146,7 +147,7 @@ async def main() -> None:
     print("• You can programmatically inspect what tools were called without parsing text")
 
     print(f"\n=== full response (truncated) ===")
-    print(json.dumps(dumped, indent=2)[:2000])
+    print(json.dumps(response.model_dump(mode="json"), indent=2)[:2000])
 
 
 if __name__ == "__main__":

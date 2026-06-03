@@ -30,10 +30,10 @@ HOW IT WORKS:
   4. Server loads conversation history for that contextId each time
   5. Round 4: client sends WITHOUT contextId again — fresh conversation
 
-THIS SCRIPT USES THE A2A SDK (unlike demo 10 which was raw HTTP):
+BOTH THIS SCRIPT AND DEMO 10 USE THE A2A SDK:
   - A2ACardResolver: fetches Agent Card for discovery
   - A2AClient: handles JSON-RPC formatting + HTTP transport
-  - SendMessageRequest/Message/TextPart: typed A2A protocol objects
+  - SendMessageRequest/Message/DataPart: typed A2A protocol objects
 
 Prereq:
     adk web --a2a m2_adk_multiagents/negotiation_agents/ --port 8000
@@ -51,35 +51,34 @@ import uuid
 import httpx
 from a2a.client import A2ACardResolver, A2AClient
 from a2a.types import (
+    DataPart,
     Message,
     MessageSendParams,
     Role,
     SendMessageRequest,
+    SendMessageSuccessResponse,
+    Task,
     TextPart,
 )
 
 
-def buyer_round(session_id: str, round_num: int, price: int) -> str:
-    """Create a buyer offer envelope for a given round.
+def buyer_offer_parts(round_num: int, price: int) -> list:
+    """Create typed A2A parts for a buyer offer.
 
-    The offer is a JSON string inside a TextPart. The A2A protocol
-    just ferries the text — the seller agent parses the JSON and
-    reasons about the price, conditions, and round number.
-
-    Example output:
-      {"session_id": "thread-a1b2c3", "round": 2, "from_agent": "buyer",
-       "to_agent": "seller", "message_type": "OFFER", "price": 440000,
-       "message": "Round 2 offer at $440,000."}
+    Returns [TextPart, DataPart] — human-readable text for the LLM
+    plus structured data for machine parsing. No json.dumps needed;
+    DataPart carries the dict natively.
     """
-    return json.dumps({
-        "session_id": session_id,
-        "round": round_num,
-        "from_agent": "buyer",
-        "to_agent": "seller",
-        "message_type": "OFFER",
-        "price": price,
-        "message": f"Round {round_num} offer at ${price:,}.",
-    })
+    return [
+        TextPart(text=f"Round {round_num} offer at ${price:,}."),
+        DataPart(data={
+            "round": round_num,
+            "from_agent": "buyer",
+            "to_agent": "seller",
+            "message_type": "OFFER",
+            "price": price,
+        }),
+    ]
 
 
 async def main() -> None:
@@ -91,8 +90,6 @@ async def main() -> None:
         default="http://127.0.0.1:8000/a2a/seller_agent",
     )
     args = parser.parse_args()
-
-    session_id = f"thread-{uuid.uuid4().hex[:6]}"
 
     # contextId starts as None. Round 1 gets it from the server response.
     # Rounds 2-3 reuse it so the seller sees the full conversation history.
@@ -117,36 +114,31 @@ async def main() -> None:
             # Build the A2A Message with typed SDK objects.
             # contextId=None on round 1 (server assigns it).
             # contextId=<round 1's value> on rounds 2-3 (threading).
-            params = MessageSendParams(
-                message=Message(
-                    messageId=f"msg_{uuid.uuid4().hex[:8]}",
-                    role=Role.user,
-                    parts=[
-                        TextPart(
-                            text=buyer_round(session_id, round_num, price)
-                        )
-                    ],
-                    contextId=context_id,
-                )
-            )
             request = SendMessageRequest(
-                id=f"req_{uuid.uuid4().hex[:8]}", params=params
+                id=f"req_{uuid.uuid4().hex[:8]}",
+                params=MessageSendParams(
+                    message=Message(
+                        messageId=f"msg_{uuid.uuid4().hex[:8]}",
+                        role=Role.user,
+                        parts=buyer_offer_parts(round_num, price),
+                        contextId=context_id,
+                    )
+                ),
             )
             response = await client.send_message(request)
-            result = response.model_dump(mode="json").get("result", {})
+            result = response.root
 
             # ── Capture contextId from round 1 ────────────────────────
             # The server assigns a unique contextId when it sees None.
             # We save it and pass it on rounds 2-3 so the server knows
             # these messages belong to the same conversation.
-            if context_id is None:
-                context_id = result.get("contextId") or (
-                    result.get("status") or {}
-                ).get("contextId")
-
-            print(f"\n=== round {round_num} (contextId={context_id}) ===")
-            # Truncated to 3000 chars — remove [:3000] to see full response
-            print(json.dumps(result, indent=2)[:3000])
+            if isinstance(result, SendMessageSuccessResponse) and isinstance(result.result, Task):
+                task = result.result
+                if context_id is None:
+                    context_id = task.context_id
+                print(f"\n=== round {round_num} (contextId={context_id}) ===")
+                print(f"  status: {task.status.state.value}")
+                print(json.dumps(result.model_dump(mode="json"), indent=2)[:3000])
 
         # ── Step 3: Bonus round — same price, NO contextId ────────────
         #
@@ -162,30 +154,27 @@ async def main() -> None:
         # conversation. Without it, every request is a clean slate.
         #
         bonus_price = 440_000
-        params = MessageSendParams(
-            message=Message(
-                messageId=f"msg_{uuid.uuid4().hex[:8]}",
-                role=Role.user,
-                parts=[
-                    TextPart(
-                        text=buyer_round(session_id, 4, bonus_price)
-                    )
-                ],
-                contextId=None,  # ← deliberately no contextId
-            )
-        )
         request = SendMessageRequest(
-            id=f"req_{uuid.uuid4().hex[:8]}", params=params
+            id=f"req_{uuid.uuid4().hex[:8]}",
+            params=MessageSendParams(
+                message=Message(
+                    messageId=f"msg_{uuid.uuid4().hex[:8]}",
+                    role=Role.user,
+                    parts=buyer_offer_parts(4, bonus_price),
+                    contextId=None,  # ← deliberately no contextId
+                )
+            ),
         )
         response = await client.send_message(request)
-        result = response.model_dump(mode="json").get("result", {})
-        new_context = result.get("contextId") or (
-            result.get("status") or {}
-        ).get("contextId")
+        result = response.root
+
+        new_context = None
+        if isinstance(result, SendMessageSuccessResponse) and isinstance(result.result, Task):
+            new_context = result.result.context_id
 
         print(f"\n=== round 4 — NO contextId (new contextId={new_context}) ===")
         print("Same $440K as round 2, but seller has NO memory of prior rounds.")
-        print(json.dumps(result, indent=2)[:3000])
+        print(json.dumps(result.model_dump(mode='json'), indent=2)[:3000])
 
 
 if __name__ == "__main__":
