@@ -41,7 +41,7 @@ Why GitHub? Because you already know what GitHub does. Seeing an LLM agent use M
 
 ```bash
 export GITHUB_TOKEN=ghp_your_token_here
-export OPENAI_API_KEY=sk-your_key_here
+export MY_OPENAI_API_KEY=sk-your_key_here
 python m1_mcp/github_agent_client.py
 
 # Or with a custom query:
@@ -159,9 +159,9 @@ The agent never imports your Python functions directly. It talks to the server o
 ## How to run
 
 ```bash
-# GitHub MCP agent (needs GITHUB_TOKEN + OPENAI_API_KEY + Node.js)
+# GitHub MCP agent (needs GITHUB_TOKEN + MY_OPENAI_API_KEY + Node.js)
 export GITHUB_TOKEN=ghp_your_token_here
-export OPENAI_API_KEY=sk-your_key_here
+export MY_OPENAI_API_KEY=sk-your_key_here
 python m1_mcp/github_agent_client.py
 
 # Inspect pricing server tools (no API key needed)

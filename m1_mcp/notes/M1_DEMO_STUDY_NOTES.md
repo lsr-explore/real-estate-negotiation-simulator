@@ -1,7 +1,7 @@
 # Module 1 — Demo Walkthrough & Concept Notes
 
 > **Audience:** Learners working through the M1 MCP demos in `m1_mcp/demos/` (01–05) plus the GitHub MCP and SSE agent demos. Use this as a guided tour while you run.
-> **Prerequisites:** Python environment set up; `OPENAI_API_KEY` available; for the GitHub demo, also Node.js + `GITHUB_TOKEN`.
+> **Prerequisites:** Python environment set up; `MY_OPENAI_API_KEY` available; for the GitHub demo, also Node.js + `GITHUB_TOKEN`.
 > **Read this *while* running:** the five demo scripts in `m1_mcp/demos/` and the two clients (`github_agent_client.py`, `sse_agent_client.py`). Each section corresponds to one demo.
 > **Read this next:** [`mcp_deep_dive.md`](mcp_deep_dive.md) for the conceptual deep-dive on every primitive, transport, and design pattern these demos exercise.
 >
@@ -92,7 +92,7 @@ The full model ↔ host ↔ server tool-calling loop with timestamps. Shows the 
 
 ### How to run
 ```bash
-python m1_mcp/demos/02_tool_loop_trace.py   # requires OPENAI_API_KEY
+python m1_mcp/demos/02_tool_loop_trace.py   # requires MY_OPENAI_API_KEY
 ```
 
 ### Actual output
@@ -282,7 +282,7 @@ A full LLM-powered agent that connects to GitHub's MCP server and lets GPT-4o de
 ### How to run
 ```bash
 python m1_mcp/github_agent_client.py "Find popular MCP server implementations"
-# requires OPENAI_API_KEY + GITHUB_TOKEN + Node.js
+# requires MY_OPENAI_API_KEY + GITHUB_TOKEN + Node.js
 ```
 
 ### The agentic loop pattern

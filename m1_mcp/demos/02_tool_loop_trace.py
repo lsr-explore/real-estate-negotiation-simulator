@@ -58,8 +58,8 @@ def _mcp_tool_to_openai(tool) -> dict:
 
 
 async def main() -> None:
-    if not os.environ.get("OPENAI_API_KEY"):
-        print("OPENAI_API_KEY not set"); return
+    if not os.environ.get("MY_OPENAI_API_KEY"):
+        print("MY_OPENAI_API_KEY not set"); return
 
     log("HOST", "connecting to MCP server (stdio subprocess)")
     server_params = StdioServerParameters(

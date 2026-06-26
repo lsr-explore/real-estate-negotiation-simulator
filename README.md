@@ -177,9 +177,24 @@ cp .env.example .env
 
 Then edit `.env` and set:
 ```env
-OPENAI_API_KEY=sk-your-key-here
+MY_OPENAI_API_KEY=sk-your-key-here
 GITHUB_TOKEN=ghp-your-token-here   # Optional — Module 1 GitHub demo only
 ```
+
+**macOS alternative — keep keys out of `.env` (Keychain):** instead of putting
+secrets in `.env`, store them once in the macOS Keychain and let the agent
+clients read them at runtime. Precedence is shell env var > `.env` > Keychain,
+so this is a zero-config fallback — no extra dependency to install.
+```bash
+# Store a key once (prompts for the value; stays off your shell history)
+security add-generic-password -s veloce -a MY_OPENAI_API_KEY -w
+security add-generic-password -s veloce -a GITHUB_TOKEN -w   # optional
+
+# Sanity-check what's stored
+python get_secret.py MY_OPENAI_API_KEY
+```
+See [`get_secret.py`](get_secret.py) for the helper (`get_secret` /
+`load_secrets_into_env`).
 
 ### 7. Run a smoke test
 
@@ -194,7 +209,7 @@ If it runs cleanly, your Python environment is ready.
 
 ```bash
 # MODULE 1: MCP protocol
-python m1_mcp/github_agent_client.py      # GitHub MCP agent (needs GITHUB_TOKEN + OPENAI_API_KEY)
+python m1_mcp/github_agent_client.py      # GitHub MCP agent (needs GITHUB_TOKEN + MY_OPENAI_API_KEY)
 python m1_mcp/pricing_server.py           # Run MCP server standalone (stdio)
 python m1_mcp/pricing_server.py --sse --port 8001  # SSE transport mode
 # MCP deep-dive demos (no API key needed unless noted):
@@ -204,7 +219,7 @@ python m1_mcp/demos/03_list_all_primitives.py
 python m1_mcp/demos/04_content_types.py
 python m1_mcp/demos/05_streamable_http_transport.py
 
-# MODULE 2: Google ADK + A2A protocol (needs OPENAI_API_KEY)
+# MODULE 2: Google ADK + A2A protocol (needs MY_OPENAI_API_KEY)
 adk web m2_adk_multiagents/adk_demos/               # ADK demos d01–d09 in dropdown
 adk web m2_adk_multiagents/negotiation_agents/       # buyer, seller, negotiation in dropdown
 adk web --a2a m2_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Agent Cards
@@ -475,12 +490,12 @@ pip install mcp
 
 **`AuthenticationError` from OpenAI**
 ```bash
-export OPENAI_API_KEY=sk-your-actual-key
+export MY_OPENAI_API_KEY=sk-your-actual-key
 ```
 
 **`AuthenticationError` / provider auth failure in ADK runs**
 ```bash
-export OPENAI_API_KEY=sk-your-actual-key
+export MY_OPENAI_API_KEY=sk-your-actual-key
 ```
 
 **`FileNotFoundError` running MCP servers**

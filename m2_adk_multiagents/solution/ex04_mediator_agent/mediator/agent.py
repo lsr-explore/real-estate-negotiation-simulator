@@ -37,6 +37,18 @@ from google.adk.tools.mcp_tool.mcp_toolset import (
 
 import os
 
+# ── Load API keys (env > .env > Keychain) — shared bootstrap; see repo-root load_env.py ──
+# adk web imports each agent module directly, so each agent loads keys for
+# itself (the M2 counterpart to M1's per-script loading). Walk up to the repo
+# root to find load_env.py regardless of how deeply this agent is nested.
+import sys as _sys
+from pathlib import Path as _Path
+for _root in _Path(__file__).resolve().parents:
+    if (_root / "load_env.py").exists():
+        _sys.path.insert(0, str(_root))
+        import load_env  # noqa: F401  (side-effect resolves OPENAI_API_KEY)
+        break
+
 MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]

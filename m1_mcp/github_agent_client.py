@@ -22,11 +22,11 @@ WHY THIS EXISTS:
 PREREQUISITES:
   1. Node.js 18+ installed (for npx)
   2. GITHUB_TOKEN — GitHub Personal Access Token
-  3. OPENAI_API_KEY — OpenAI API key
+  3. MY_OPENAI_API_KEY — OpenAI API key
 
 HOW TO RUN:
   export GITHUB_TOKEN=ghp_your_token_here
-  export OPENAI_API_KEY=sk-your_key_here
+  export MY_OPENAI_API_KEY=sk-your_key_here
   python m1_mcp/github_agent_client.py
 
   # Or with a custom query:
@@ -72,11 +72,20 @@ def _load_env_file_if_present(env_path: str = ".env") -> None:
 
 _load_env_file_if_present()
 
+# Fall back to the macOS Keychain for any key still unset (env > .env > Keychain).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from get_secret import load_secrets_into_env
+
+    load_secrets_into_env("MY_OPENAI_API_KEY", "GITHUB_TOKEN")
+except ImportError:
+    pass  # Keychain helper is optional; .env still works.
+
 
 # ─── Validation ───────────────────────────────────────────────────────────────
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+MY_OPENAI_API_KEY = os.environ.get("MY_OPENAI_API_KEY", "").strip()
 
 _PLACEHOLDER_PREFIXES = ("your_token", "ghp_your", "<your", "TOKEN_HERE")
 if not GITHUB_TOKEN or any(GITHUB_TOKEN.lower().startswith(p) for p in _PLACEHOLDER_PREFIXES):
@@ -84,8 +93,8 @@ if not GITHUB_TOKEN or any(GITHUB_TOKEN.lower().startswith(p) for p in _PLACEHOL
     print("   Get one at: GitHub -> Settings -> Developer Settings -> Personal Access Tokens")
     sys.exit(1)
 
-if not OPENAI_API_KEY or OPENAI_API_KEY.startswith("sk-your"):
-    print("ERROR: OPENAI_API_KEY not set (or is a placeholder).")
+if not MY_OPENAI_API_KEY or MY_OPENAI_API_KEY.startswith("sk-your"):
+    print("ERROR: MY_OPENAI_API_KEY not set (or is a placeholder).")
     sys.exit(1)
 
 
@@ -194,7 +203,7 @@ async def run_agent(query: str) -> str:
             tools_by_name = {t.name: t for t in mcp_tools}
 
             # ── 3. Start the agent loop ───────────────────────────────────
-            client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+            client = AsyncOpenAI(api_key=MY_OPENAI_API_KEY)
             messages: list[dict] = [
                 {
                     "role": "system",

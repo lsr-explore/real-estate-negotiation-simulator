@@ -71,9 +71,18 @@ def _load_env_file_if_present(env_path: str = ".env") -> None:
 
 _load_env_file_if_present()
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
-if not OPENAI_API_KEY or OPENAI_API_KEY.startswith("sk-your"):
-    print("ERROR: OPENAI_API_KEY not set (or is a placeholder).")
+# Fall back to the macOS Keychain for any key still unset (env > .env > Keychain).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from get_secret import load_secrets_into_env
+
+    load_secrets_into_env("MY_OPENAI_API_KEY")
+except ImportError:
+    pass  # Keychain helper is optional; .env still works.
+
+MY_OPENAI_API_KEY = os.environ.get("MY_OPENAI_API_KEY", "").strip()
+if not MY_OPENAI_API_KEY or MY_OPENAI_API_KEY.startswith("sk-your"):
+    print("ERROR: MY_OPENAI_API_KEY not set (or is a placeholder).")
     sys.exit(1)
 
 OPENAI_MODEL = "gpt-4o-mini"
@@ -217,7 +226,7 @@ async def run_agent(
         return ""
 
     # ── Agent loop ────────────────────────────────────────────────────
-    client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    client = AsyncOpenAI(api_key=MY_OPENAI_API_KEY)
     messages: list[dict] = [
         {
             "role": "system",

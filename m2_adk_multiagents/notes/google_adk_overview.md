@@ -963,11 +963,11 @@ Agent protocol:    A2A (HTTP JSON-RPC transport in Module 2)
 
 ```bash
 # Set in environment
-export OPENAI_API_KEY="sk-..."
+export MY_OPENAI_API_KEY="sk-..."
 
 # In Python
 import os
-os.environ["OPENAI_API_KEY"] = "sk-..."
+os.environ["MY_OPENAI_API_KEY"] = "sk-..."
 ```
 
 ---

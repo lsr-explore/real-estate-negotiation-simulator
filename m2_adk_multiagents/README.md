@@ -1,6 +1,15 @@
 # Module 2 — ADK Multi-Agents & A2A Protocol (`m2_adk_multiagents`)
 
-**Requires:** `OPENAI_API_KEY` set as an environment variable
+**Requires:** an OpenAI key. Each agent auto-loads it on import via the repo-root
+`load_env.py` (precedence: shell env var > `.env` > macOS Keychain). The Keychain
+account is `MY_OPENAI_API_KEY` under service `veloce` — store it once with:
+
+```bash
+security add-generic-password -s veloce -a MY_OPENAI_API_KEY -w
+```
+
+The agents run `openai/...` models through LiteLLM, which reads `OPENAI_API_KEY`
+by name, so `load_env.py` mirrors the resolved value into `OPENAI_API_KEY` for you.
 
 This module teaches Google's Agent Development Kit (ADK) from first principles, then shows how agents communicate over the A2A protocol.
 
